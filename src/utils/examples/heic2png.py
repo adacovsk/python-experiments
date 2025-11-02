@@ -1,9 +1,27 @@
+"""Example script for converting HEIC images to PNG."""
+
 import os
 import sys
+from pathlib import Path
 from PIL import Image
 import pillow_heif
 
-from utils.config_loader import load_config
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
+
+def load_config():
+    """Load configuration from config.toml in the examples directory."""
+    config_path = Path(__file__).parent / "config.toml"
+
+    if not config_path.exists():
+        print(f"Error: config.toml not found at {config_path}")
+        sys.exit(1)
+
+    with open(config_path, "rb") as f:
+        return tomllib.load(f)
 
 
 def heic_to_png(heic_file, png_file):

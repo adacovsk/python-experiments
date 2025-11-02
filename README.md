@@ -6,10 +6,12 @@ Collection of Python experiments, benchmarks, and ML tools.
 
 ### 🎬 [video_ml/](src/video_ml/)
 AI-powered video and image enhancement tools:
-- Video upscaling with RealESRGAN (4x resolution)
-- Image denoising with NAFNet
-- Frame interpolation for smooth slow-motion
-- Batch processing with ffmpeg integration
+- **core/** - Reusable backend classes (ImageEnhancer, VideoProcessor, etc.)
+- **examples/** - Example scripts with config.toml
+  - Video upscaling with RealESRGAN (4x resolution)
+  - Image denoising with NAFNet
+  - Frame interpolation for smooth slow-motion
+  - Batch processing with ffmpeg integration
 
 **Models**: 3 pre-trained PyTorch models (137 MB total)
 
@@ -17,6 +19,14 @@ AI-powered video and image enhancement tools:
 Performance benchmarks and comparisons:
 - Pandas vs Polars on 10M rows
 - Vectorized vs non-vectorized operations
+
+### 🔧 [utils/](src/utils/)
+Utility scripts:
+- **examples/** - HEIC conversion, batch renaming tools
+
+### 🧪 [simulation/](src/simulation/)
+Statistical simulations:
+- **examples/** - Ensemble smoothing experiments
 
 ## 🚀 Quick Start
 
@@ -31,11 +41,11 @@ pip install -e .
 # Run benchmarks
 python src/benchmarks/pandas_vs_polars.py
 
-# Run video enhancement
-python src/video_ml/pretrained_sharpener.py input.jpg
+# Run video enhancement examples
+python src/video_ml/examples/enhance_images.py
 
-# Or import as a module
-python -c "from video_ml import __version__; print(__version__)"
+# Or import core classes directly
+python -c "from video_ml.core import ImageEnhancer; print('Loaded successfully')"
 ```
 
 ## 📦 Dependencies
