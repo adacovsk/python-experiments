@@ -29,10 +29,10 @@ source venv/bin/activate
 pip install -e .
 
 # Run benchmarks
-python src/benchmarks/test.py
+python src/benchmarks/pandas_vs_polars.py
 
 # Run video enhancement
-python src/video_ml/pretrained-sharpener.py input.jpg
+python src/video_ml/pretrained_sharpener.py input.jpg
 
 # Or import as a module
 python -c "from video_ml import __version__; print(__version__)"
@@ -59,21 +59,4 @@ pip install -e .[dev]  # Includes pytest, black, ruff, mypy
 For NVIDIA GPU acceleration, install CUDA-enabled PyTorch:
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-```
-
-## 📁 Structure
-
-```
-python-experiments/
-├── src/
-│   ├── benchmarks/      # Performance tests
-│   │   ├── __init__.py
-│   │   └── test.py     # Pandas vs Polars benchmark
-│   └── video_ml/       # Video/image ML tools
-│       ├── __init__.py
-│       ├── *.py        # Processing scripts
-│       └── *.pth       # Pre-trained models (gitignored)
-├── venv/               # Virtual environment (gitignored)
-├── pyproject.toml      # Package config & dependencies
-└── README.md           # This file
 ```

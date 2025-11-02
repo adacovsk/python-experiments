@@ -5,19 +5,16 @@ AI-powered video and image enhancement using PyTorch and pre-trained models.
 ## 🎬 Scripts
 
 ### Video Processing
-- **`video-processor.py`** - Main video processing pipeline
-- **`video-enhancer-with-fps.py`** - Video enhancement with FPS control
-- **`frame-interpolator.py`** - Frame interpolation for smooth slow-mo
+- **`video_processor.py`** - Main video processing pipeline
+- **`video_enhancer_with_fps.py`** - Video enhancement with FPS control
+- **`frame_interpolator.py`** - Frame interpolation for smooth slow-mo
 
 ### Image Enhancement
-- **`pretrained-sharpener.py`** - Image sharpening using RealESRGAN
-- **`image-sharpener.py`** - Custom image sharpening
+- **`pretrained_sharpener.py`** - Image sharpening using RealESRGAN
+- **`image_sharpener.py`** - Custom image sharpening
 - **`denoise.py`** - Image denoising using NAFNet
-- **`ensemble.py`** - Ensemble multiple enhancement models
 
 ### Utilities
-- **`heic2png.py`** - Convert HEIC images to PNG
-- **`Rename.py`** - Batch file renaming
 - **`pad.py`** - Image padding utilities
 
 ## 🤖 Pre-trained Models
@@ -36,13 +33,13 @@ AI-powered video and image enhancement using PyTorch and pre-trained models.
 
 ```bash
 # Sharpen image with RealESRGAN
-python pretrained-sharpener.py input.jpg
+python pretrained_sharpener.py input.jpg
 
 # Denoise video
 python denoise.py video.mp4
 
 # Frame interpolation (2x slow-mo)
-python frame-interpolator.py video.mp4 --factor 2
+python frame_interpolator.py video.mp4 --factor 2
 ```
 
 ## 🔧 Requirements

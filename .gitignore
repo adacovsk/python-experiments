@@ -5,6 +5,12 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
 # IDE
 .vscode/
 .idea/

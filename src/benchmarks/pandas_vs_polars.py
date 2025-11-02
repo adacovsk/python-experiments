@@ -80,14 +80,14 @@ print(f"Pandas: {time.time() - start:.2f}s")
 # Polars
 start = time.time()
 result = df_pl.group_by('department').agg([
-    pl.col('age').mean(),
-    pl.col('age').std(),
-    pl.col('age').min(),
-    pl.col('age').max(),
-    pl.col('salary').mean(),
-    pl.col('salary').std(),
-    pl.col('salary').min(),
-    pl.col('salary').max()
+    pl.col('age').mean().alias('age_mean'),
+    pl.col('age').std().alias('age_std'),
+    pl.col('age').min().alias('age_min'),
+    pl.col('age').max().alias('age_max'),
+    pl.col('salary').mean().alias('salary_mean'),
+    pl.col('salary').std().alias('salary_std'),
+    pl.col('salary').min().alias('salary_min'),
+    pl.col('salary').max().alias('salary_max')
 ])
 print(f"Polars: {time.time() - start:.2f}s")
 
