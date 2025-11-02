@@ -472,24 +472,29 @@ class EnhancedVideoProcessor(LowMemoryVideoProcessor):
         print(f"\nVideo enhancement complete: {output_path}")
 
 def main():
+    import sys
+    from utils.config_loader import load_config
+
+    config = load_config()
+    enhancer_config = config["video_enhancer"]
+
     try:
         # Initialize processor with both super-resolution and interpolation models
         processor = EnhancedVideoProcessor(
-            sr_weights_path="RealESRGAN_x4plus.pth",
-            interpolation_weights_path="rife_model.pth",  # You'll need to provide RIFE weights
+            sr_weights_path=enhancer_config["sr_weights_path"],
+            interpolation_weights_path=enhancer_config["interpolation_weights_path"],
             device="cuda" if torch.cuda.is_available() else "cpu"
         )
-        
+
         # Process video
         processor.enhance_video(
-            input_path="20130809_023600.wmv",
-            output_path="enhanced_output.mp4",
-            target_height=720,
-            target_fps=20  # Target FPS (will interpolate frames to reach this)
+            input_path=enhancer_config["input_video"],
+            output_path=enhancer_config["output_video"],
+            target_height=enhancer_config.get("target_height", 720),
+            target_fps=enhancer_config.get("target_fps", 60)
         )
     except Exception as e:
         print(f"Error: {str(e)}")
-        import sys
         sys.exit(1)
 
 if __name__ == "__main__":

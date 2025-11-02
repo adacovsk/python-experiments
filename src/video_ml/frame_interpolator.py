@@ -266,20 +266,25 @@ class VideoFrameInterpolator:
             raise
 
 def main():
+    import sys
+    from utils.config_loader import load_config
+
+    config = load_config()
+    interp_config = config["frame_interpolator"]
+
     try:
         interpolator = VideoFrameInterpolator(
-            weights_path="interpolator_weights.pth",
+            weights_path=interp_config["weights_path"],
             device="cuda" if torch.cuda.is_available() else "cpu"
         )
-        
+
         interpolator.interpolate_video(
-            input_path="20130809_023600.mp4",
-            output_path="interpolated_output.mp4",
-            target_fps=30  # Or specify your desired target FPS
+            input_path=interp_config["input_video"],
+            output_path=interp_config["output_video"],
+            target_fps=interp_config.get("target_fps", 60)
         )
     except Exception as e:
         print(f"Error: {str(e)}")
-        import sys
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -37,6 +37,8 @@ dependencies = [
     "pymediainfo",
     "tqdm",
     "matplotlib",
+    # Configuration
+    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -55,7 +57,7 @@ Repository = "https://github.com/yourusername/python-experiments"
 # Tool configurations
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["video_ml*", "benchmarks*"]
+include = ["video_ml*", "benchmarks*", "utils*", "simulation*"]
 
 [tool.black]
 line-length = 100
