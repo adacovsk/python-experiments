@@ -1,0 +1,37 @@
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Large model files (track with Git LFS or download separately)
+*.pth
+*.onnx
+*.pt
+
+# Processing artifacts
+video-ml/enhanced_images/
+video-ml/input_images/
+video-ml/temp_frames/
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.heic
+
+# OS
+.DS_Store
+Thumbs.db
