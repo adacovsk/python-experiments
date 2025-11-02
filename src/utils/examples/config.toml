@@ -1,0 +1,4 @@
+# Configuration for utils examples
+
+[heic2png]
+input_folder = "/path/to/your/heic/images"

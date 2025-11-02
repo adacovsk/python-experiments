@@ -293,15 +293,3 @@ def process_video(input_path, output_path, model_path, temp_folder='temp_frames'
         
         print(f"Video processing complete. Output saved to {output_path}")
 
-if __name__ == "__main__":
-    from utils.config_loader import load_config
-
-    config = load_config()
-    denoise_config = config["denoise"]
-
-    process_video(
-        denoise_config["input_video"],
-        denoise_config["output_video"],
-        denoise_config["model_path"],
-        denoise_config.get("temp_folder", "temp_frames")
-    )

@@ -1,34 +1,23 @@
-# Configuration file for python-experiments
+# Configuration for video_ml examples
 # Update these paths for your local setup
 
-[heic2png]
-input_folder = "/path/to/your/heic/images"
-
-[pad]
-input_folder = "/path/to/your/temp_frames"
-output_video = "output_video.mp4"
-frame_rate = 30
-target_width = 1280
-target_height = 720
-
-[denoise]
-input_video = "input_video.mp4"
-output_video = "denoised_output.mp4"
-model_path = "NAFNet-GoPro-width32.pth"
-temp_folder = "temp_frames"
-
-[pretrained_sharpener]
+[image_enhancer]
 input_dir = "input_images"
 output_dir = "enhanced_images"
 weights_path = "RealESRGAN_x4plus.pth"
 batch_size = 1
+
+[denoiser]
+input_video = "input_video.mp4"
+output_video = "denoised_output.mp4"
+model_path = "NAFNet-GoPro-width32.pth"
+temp_folder = "temp_frames"
 
 [frame_interpolator]
 input_video = "input_video.mp4"
 output_video = "interpolated_output.mp4"
 weights_path = "interpolator_weights.pth"
 target_fps = 60
-interpolation_factor = 2
 
 [video_enhancer]
 input_video = "input_video.mp4"
@@ -45,3 +34,10 @@ sr_weights_path = "RealESRGAN_x4plus.pth"
 interpolation_weights_path = "rife_model.pth"
 target_height = 720
 target_fps = 60
+
+[pad]
+input_folder = "/path/to/your/temp_frames"
+output_video = "output_video.mp4"
+frame_rate = 30
+target_width = 1280
+target_height = 720
