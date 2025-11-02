@@ -1,15 +1,23 @@
 import cv2
 import os
+import sys
 import numpy as np
 
-# Define paths and parameters
-input_folder = r"C:\Users\Adam\Desktop\python\temp_frames"  # Folder containing original frames
-output_video = "output_video.mp4"     # Final video file path
-frame_rate = 30                       # Frame rate for the video (e.g., 30 FPS)
+from utils.config_loader import load_config
 
-# Target dimensions for 720p
-target_width = 1280
-target_height = 720
+# Load configuration
+config = load_config()
+pad_config = config["pad"]
+input_folder = pad_config["input_folder"]
+output_video = pad_config["output_video"]
+frame_rate = pad_config["frame_rate"]
+target_width = pad_config["target_width"]
+target_height = pad_config["target_height"]
+
+if not os.path.exists(input_folder):
+    print(f"Error: Input folder does not exist: {input_folder}")
+    print("Please update the path in config.toml")
+    sys.exit(1)
 
 def pad_to_720p(frame):
     """Pads a frame to 1280x720 if needed, centering the original content."""

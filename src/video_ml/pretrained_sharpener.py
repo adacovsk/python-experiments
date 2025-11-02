@@ -202,14 +202,19 @@ class ImageEnhancer:
         print(f"Total processing time: {total_time:.2f} seconds")
 
 def main():
+    from utils.config_loader import load_config
+
+    config = load_config()
+    sharpener_config = config["pretrained_sharpener"]
+
     # Initialize the enhancer
-    enhancer = ImageEnhancer(weights_path="RealESRGAN_x4plus.pth")
-    
+    enhancer = ImageEnhancer(weights_path=sharpener_config["weights_path"])
+
     # Process a batch of images
     enhancer.batch_process(
-        input_dir="input_images",
-        output_dir="enhanced_images",
-        batch_size=1  # Adjust based on available memory
+        input_dir=sharpener_config["input_dir"],
+        output_dir=sharpener_config["output_dir"],
+        batch_size=sharpener_config.get("batch_size", 1)
     )
 
 if __name__ == "__main__":

@@ -294,8 +294,14 @@ def process_video(input_path, output_path, model_path, temp_folder='temp_frames'
         print(f"Video processing complete. Output saved to {output_path}")
 
 if __name__ == "__main__":
-    input_video = "input_video.mp4"
-    output_video = "denoised_output.mp4"
-    model_path = "NAFNet-GoPro-width32.pth"  # Path to your pretrained model
-    
-    process_video(input_video, output_video, model_path)
+    from utils.config_loader import load_config
+
+    config = load_config()
+    denoise_config = config["denoise"]
+
+    process_video(
+        denoise_config["input_video"],
+        denoise_config["output_video"],
+        denoise_config["model_path"],
+        denoise_config.get("temp_folder", "temp_frames")
+    )
