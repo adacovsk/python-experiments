@@ -3,8 +3,9 @@
 import os
 import sys
 from pathlib import Path
-from PIL import Image
+
 import pillow_heif
+from PIL import Image
 
 try:
     import tomllib

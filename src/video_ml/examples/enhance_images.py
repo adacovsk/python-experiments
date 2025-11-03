@@ -1,35 +1,19 @@
 """Example script demonstrating image enhancement with RealESRGAN."""
 
-import sys
-from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-
+from utils import get_device, load_config
 from video_ml.core.enhancer import ImageEnhancer
-
-
-def load_config():
-    """Load configuration from config.toml in the examples directory."""
-    config_path = Path(__file__).parent / "config.toml"
-
-    if not config_path.exists():
-        print(f"Error: config.toml not found at {config_path}")
-        print("Please create config.toml in the examples directory.")
-        sys.exit(1)
-
-    with open(config_path, "rb") as f:
-        return tomllib.load(f)
 
 
 def main():
     config = load_config()
     enhancer_config = config["image_enhancer"]
+    device = get_device(config)
 
     # Initialize the enhancer
-    enhancer = ImageEnhancer(weights_path=enhancer_config["weights_path"])
+    enhancer = ImageEnhancer(
+        weights_path=enhancer_config["weights_path"],
+        device=device
+    )
 
     # Process a batch of images
     enhancer.batch_process(

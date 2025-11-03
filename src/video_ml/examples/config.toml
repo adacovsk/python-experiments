@@ -1,43 +1,36 @@
 # Configuration for video_ml examples
 # Update these paths for your local setup
 
+# Device configuration
+[device]
+# Options: "cuda", "cpu", or "auto" (auto-detect GPU)
+# Using CPU due to GPU memory constraints (2GB insufficient for these models)
+device = "cpu"
+
+# Image enhancement configuration
 [image_enhancer]
-input_dir = "input_images"
-output_dir = "enhanced_images"
-weights_path = "RealESRGAN_x4plus.pth"
+input_dir = "test_inputs"
+output_dir = "test_outputs"
+weights_path = "model_weights/RealESRGAN_x4plus.pth"
 batch_size = 1
 
-[denoiser]
-input_video = "input_video.mp4"
-output_video = "denoised_output.mp4"
-model_path = "NAFNet-GoPro-width32.pth"
-temp_folder = "temp_frames"
+# Unified video processing configuration
+[video_processing]
+input_video = "test_inputs/test_video.mp4"
+output_video = "test_outputs/processed_output.mp4"
+preserve_audio = true
 
-[frame_interpolator]
-input_video = "input_video.mp4"
-output_video = "interpolated_output.mp4"
-weights_path = "interpolator_weights.pth"
-target_fps = 60
+# Operations to apply (can combine multiple)
+# Set to true/false for each operation you want
+enable_denoise = false
+enable_enhance = true
+enable_sharpen = false
 
-[video_enhancer]
-input_video = "input_video.mp4"
-output_video = "enhanced_output.mp4"
-sr_weights_path = "RealESRGAN_x4plus.pth"
-interpolation_weights_path = "rife_model.pth"
-target_height = 720
-target_fps = 60
+# Enhancement settings (when enable_enhance = true)
+enhance_weights_path = "model_weights/RealESRGAN_x4plus.pth"
 
-[video_processor]
-input_video = "input_video.mp4"
-output_video = "enhanced_output.mp4"
-sr_weights_path = "RealESRGAN_x4plus.pth"
-interpolation_weights_path = "rife_model.pth"
-target_height = 720
-target_fps = 60
+# Denoising settings (when enable_denoise = true)
+denoise_model_path = "model_weights/NAFNet-GoPro-width32.pth"
 
-[pad]
-input_folder = "/path/to/your/temp_frames"
-output_video = "output_video.mp4"
-frame_rate = 30
-target_width = 1280
-target_height = 720
+# Sharpening settings (when enable_sharpen = true)
+sharpen_strength = 1.0

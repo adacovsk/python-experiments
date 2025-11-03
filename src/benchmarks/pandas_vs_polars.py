@@ -1,7 +1,8 @@
+import time
+
+import numpy as np
 import pandas as pd
 import polars as pl
-import numpy as np
-import time
 
 # Create test data (10 million rows)
 n = 10_000_000

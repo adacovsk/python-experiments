@@ -1,8 +1,10 @@
 import os
 from datetime import datetime
-from PIL import Image
+
 from moviepy.editor import VideoFileClip
+from PIL import Image
 from pymediainfo import MediaInfo
+
 
 def get_encoded_and_tagged_date(file_path):
     try:
@@ -48,7 +50,7 @@ def get_metadata(file_path):
     except Exception as e:
         print(f"Error getting metadata for {file_path}: {e}")
         return None
-    
+
 def extract_creation_time(video_path):
     try:
         clip = VideoFileClip(video_path)
@@ -173,6 +175,6 @@ def main():
             continue
 
 if __name__ == "__main__":
-    print(f"Starting...")
+    print("Starting...")
     main()
-    print(f"Done.")
+    print("Done.")
