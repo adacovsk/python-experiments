@@ -1,36 +1,20 @@
 # Configuration for video_ml examples
-# Update these paths for your local setup
 
 # Device configuration
 [device]
 # Options: "cuda", "cpu", or "auto" (auto-detect GPU)
-# Using CPU due to GPU memory constraints (2GB insufficient for these models)
 device = "cpu"
 
 # Image enhancement configuration
 [image_enhancer]
-input_dir = "test_inputs"
-output_dir = "test_outputs"
+input_dir = "src/video_ml/examples/test_inputs"
+output_dir = "src/video_ml/examples/test_outputs"
 weights_path = "model_weights/RealESRGAN_x4plus.pth"
 batch_size = 1
 
-# Unified video processing configuration
+# Video enhancement configuration
 [video_processing]
-input_video = "test_inputs/test_video.mp4"
-output_video = "test_outputs/processed_output.mp4"
+input_video = "src/video_ml/examples/test_inputs/test_video.mp4"
+output_video = "src/video_ml/examples/test_outputs/enhanced_video.mp4"
+weights_path = "model_weights/RealESRGAN_x4plus.pth"
 preserve_audio = true
-
-# Operations to apply (can combine multiple)
-# Set to true/false for each operation you want
-enable_denoise = false
-enable_enhance = true
-enable_sharpen = false
-
-# Enhancement settings (when enable_enhance = true)
-enhance_weights_path = "model_weights/RealESRGAN_x4plus.pth"
-
-# Denoising settings (when enable_denoise = true)
-denoise_model_path = "model_weights/NAFNet-GoPro-width32.pth"
-
-# Sharpening settings (when enable_sharpen = true)
-sharpen_strength = 1.0
