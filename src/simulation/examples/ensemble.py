@@ -1,5 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Observed outcomes of coin flips (1 for heads, 0 for tails)
 observations = np.array([1, 0, 1, 1, 0, 1, 0, 1])
@@ -26,22 +26,22 @@ def simulate_flips(p, n_flips):
 for iteration in range(n_iterations):
     simulated_outcomes = np.array([simulate_flips(p, len(observations)) for p in ensemble])
     misfits = simulated_outcomes - observations[np.newaxis, :]
-    
+
     # Store current realizations
     realizations_history.append(simulated_outcomes)
-    
+
     # Calculate mean misfit for each ensemble member
     mean_misfit = np.mean(misfits, axis=1)
-    
+
     # Update ensemble members based on the mean misfit
     ensemble -= 0.1 * mean_misfit  # 0.1 is a learning rate to control update size
-    
+
     # Ensure probabilities remain valid (between 0 and 1)
     ensemble = np.clip(ensemble, 0, 1)
 
     # Store ensemble state for visualization
     ensemble_history.append(ensemble.copy())
-    
+
     # Print the updated ensemble after each iteration
     print(f"Iteration {iteration + 1}: {ensemble}")
 
@@ -75,7 +75,7 @@ plt.show()
 weights = np.ones(n_ensemble) / n_ensemble  # Start with equal weights
 for iteration in range(n_iterations):
     simulated_outcomes = np.array([simulate_flips(p, len(observations)) for p in ensemble])
-    
+
     # Weighted average prediction
     weighted_prediction = np.dot(weights, simulated_outcomes)
     misfit = weighted_prediction - observations
