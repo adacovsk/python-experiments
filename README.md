@@ -9,23 +9,20 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 
 **Core Modules** (`core/`):
 - `enhancer.py` - RealESRGAN for 4x super-resolution (images & videos)
-- `denoiser.py` - NAFNet for noise removal
-- `sharpener.py` - Convolution-based sharpening (no model required)
+- `pipeline.py` - VideoPipeline for video processing
 - `video_utils.py` - Audio extraction/merging utilities
 
-**Example Scripts** (`examples/`):
-- `enhance_images.py` - Batch image enhancement
-- `process_video.py` - Unified video processing pipeline
+**Controller Script** (`examples/`):
+- `main.py` - Single entry point for all image and video processing
 
 **Key Features**:
-- Combine operations: denoise + enhance + sharpen in one pass
-- Automatic audio preservation
+- 4x super-resolution enhancement for images and videos
+- Automatic audio preservation for videos
 - Configuration-driven workflow via `config.toml`
-- DRY architecture with shared utilities
+- ffmpeg-based video encoding for maximum compatibility
 
-**Models**: 2 pre-trained PyTorch models (129 MB total)
-- RealESRGAN_x4plus.pth (64 MB) - Enhancement
-- NAFNet-GoPro-width32.pth (65 MB) - Denoising
+**Model**: Pre-trained PyTorch model (64 MB)
+- RealESRGAN_x4plus.pth - 4x super-resolution enhancement
 
 ### 📊 [benchmarks/](src/benchmarks/)
 Performance benchmarks and comparisons:
@@ -43,24 +40,24 @@ Statistical simulations:
 ## 🚀 Quick Start
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Install system dependencies
+# Ubuntu/Debian:
+sudo apt-get install ffmpeg
+
+# macOS:
+brew install ffmpeg
 
 # Install package with dependencies
 pip install -e .
 
-# Download models (optional - only needed for enhance/denoise)
+# Download model (optional - only needed for enhancement)
 bash src/video_ml/download_models.sh
 
-# Run video processing (configure operations in config.toml)
-python -m video_ml.examples.process_video
-
-# Run image enhancement
-python -m video_ml.examples.enhance_images
+# Run processing (configure in config.toml)
+python -m video_ml.examples.main
 
 # Or import core classes directly
-python -c "from video_ml.core import ImageEnhancer, Sharpener; print('Loaded successfully')"
+python -c "from video_ml.core import ImageEnhancer, VideoPipeline; print('Loaded successfully')"
 ```
 
 ## ⚙️ Configuration
@@ -69,18 +66,17 @@ Edit `src/video_ml/examples/config.toml` to customize processing:
 
 ```toml
 [video_processing]
-input_video = "test_inputs/test_video.mp4"
-output_video = "test_outputs/processed_output.mp4"
-
-# Enable any combination of operations
-enable_denoise = false
+input_video = "src/video_ml/examples/test_inputs/test_video.mp4"
+output_video = "src/video_ml/examples/test_outputs/processed_output.mp4"
 enable_enhance = true
-enable_sharpen = false
-
-# Operation-specific settings
 enhance_weights_path = "model_weights/RealESRGAN_x4plus.pth"
-denoise_model_path = "model_weights/NAFNet-GoPro-width32.pth"
-sharpen_strength = 1.0
+preserve_audio = true
+
+[image_enhancer]
+input_dir = "src/video_ml/examples/test_inputs"
+output_dir = "src/video_ml/examples/test_outputs"
+weights_path = "model_weights/RealESRGAN_x4plus.pth"
+batch_size = 1
 ```
 
 ## 📦 Dependencies
