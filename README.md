@@ -1,4 +1,4 @@
-# Python Experiments 🐍
+# Python Experiments
 
 Collection of Python experiments, benchmarks, and ML tools.
 
@@ -12,13 +12,15 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 - `pipeline.py` - VideoPipeline for video processing
 - `video_utils.py` - Audio extraction/merging utilities
 
-**Controller Script** (`examples/`):
+**Examples** (`examples/`):
 - `main.py` - Single entry point for all image and video processing
+- `config.toml` - Configuration file for customizing processing
 
 **Key Features**:
 - 4x super-resolution enhancement for images and videos
 - Automatic audio preservation for videos
-- Configuration-driven workflow via `config.toml`
+- Configuration-driven workflow
+- GPU/CPU auto-detection with configurable device selection
 - ffmpeg-based video encoding for maximum compatibility
 
 **Model**: Pre-trained PyTorch model (64 MB)
@@ -65,13 +67,18 @@ python -c "from video_ml.core import ImageEnhancer, VideoPipeline; print('Loaded
 Edit `src/video_ml/examples/config.toml` to customize processing:
 
 ```toml
+# Device configuration
+[device]
+device = "auto"  # Options: "cuda", "cpu", or "auto" (auto-detect GPU)
+
+# Video enhancement configuration
 [video_processing]
 input_video = "src/video_ml/examples/test_inputs/test_video.mp4"
-output_video = "src/video_ml/examples/test_outputs/processed_output.mp4"
-enable_enhance = true
-enhance_weights_path = "model_weights/RealESRGAN_x4plus.pth"
+output_video = "src/video_ml/examples/test_outputs/enhanced_video.mp4"
+weights_path = "model_weights/RealESRGAN_x4plus.pth"
 preserve_audio = true
 
+# Image enhancement configuration
 [image_enhancer]
 input_dir = "src/video_ml/examples/test_inputs"
 output_dir = "src/video_ml/examples/test_outputs"
@@ -85,8 +92,8 @@ Core packages:
 - **PyTorch** - Deep learning framework
 - **OpenCV** - Computer vision
 - **Pandas/Polars** - Data analysis
-- **MoviePy** - Video editing
-- **Pillow** - Image processing
+- **Pillow** - Image processing (including HEIF support)
+- **ffmpeg** - Video encoding (system dependency)
 
 See `pyproject.toml` for complete list.
 
