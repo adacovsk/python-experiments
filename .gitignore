@@ -38,6 +38,12 @@ video-ml/temp_frames/
 *.png
 *.heic
 
+# Downloads
+downloads/
+
 # OS
 .DS_Store
 Thumbs.db
+# pixi environments
+.pixi/*
+!.pixi/config.toml
