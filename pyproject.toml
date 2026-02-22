@@ -39,6 +39,8 @@ dependencies = [
     "matplotlib",
     # Configuration
     "tomli>=2.0.0; python_version < '3.11'",
+    # YouTube downloading
+    "yt-dlp",
 ]
 
 [project.optional-dependencies]
