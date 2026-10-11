@@ -171,7 +171,10 @@ def main() -> None:
     which.add_argument("--all", action="store_true")
     which.add_argument("--report", action="store_true", help="coverage and collisions only")
     which.add_argument("--reroll", help="comma-separated ability keys whose pictures to replace (bad hands, wrong subject)")
-    parser.add_argument("--max-rerolls", type=int, default=3)
+    # Report-only by default: on dark engraved icons the shape hash matches pictures a
+    # person tells apart at a glance, and every automatic re-roll spends allowance.
+    parser.add_argument("--max-rerolls", type=int, default=0,
+                        help="automatic re-rolls of look-alike icons (default 0: just list them)")
     parser.add_argument("--max-bits", type=int, default=40, help="shape distance (of 256) at or below which icons collide")
     parser.add_argument("--max-colour", type=float, default=40.0, help="colour distance at or below which icons collide")
     parser.add_argument("--export", type=Path, help="copy finished icons here, e.g. a bevy-rpg assets dir")
