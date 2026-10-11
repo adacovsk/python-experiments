@@ -181,12 +181,14 @@ class CloudflareRenderer:
                     if refusals < 3:
                         continue
                     raise PromptRefused(detail[:300]) from error
-                if error.code in (429, 500, 502, 503, 504) and attempt < 5:
+                # 409 is the model's own worker failing ("Cog prediction failed"), not
+                # a refusal: it passes on a retry like the other transient codes.
+                if error.code in (409, 429, 500, 502, 503, 504) and attempt < 7:
                     time.sleep(2 ** attempt * 5)
                     continue
                 raise SystemExit(f"Workers AI refused the request (HTTP {error.code}): {detail[:400]}")
             except urllib.error.URLError:
-                if attempt < 5:
+                if attempt < 7:
                     time.sleep(2 ** attempt * 5)
                     continue
                 raise
