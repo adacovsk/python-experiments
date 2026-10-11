@@ -4,6 +4,7 @@
     pixi run icons --only fireball,heal        # specific ability keys
     pixi run icons --all                       # every ability (resumable; run overnight)
     pixi run icons --report                    # coverage only, renders nothing
+    pixi run icons --reroll hermit,frostbite   # throw away these pictures and paint new ones
 
 For each ability:
 1. **Picture** — the AI paints one concrete subject in full colour on a plain black
@@ -166,6 +167,7 @@ def main() -> None:
     which.add_argument("--sample", type=int, help="this many abilities spread across types")
     which.add_argument("--all", action="store_true")
     which.add_argument("--report", action="store_true", help="coverage and collisions only")
+    which.add_argument("--reroll", help="comma-separated ability keys whose pictures to replace (bad hands, wrong subject)")
     parser.add_argument("--max-rerolls", type=int, default=3)
     parser.add_argument("--max-bits", type=int, default=40, help="shape distance (of 256) at or below which icons collide")
     parser.add_argument("--max-colour", type=float, default=40.0, help="colour distance at or below which icons collide")
@@ -176,8 +178,8 @@ def main() -> None:
     every = ability_data.load(args.repo)
     if not every:
         sys.exit(f"no ability records under {args.repo}/assets/data/en")
-    if args.only:
-        targets = args.only.split(",")
+    if args.only or args.reroll:
+        targets = (args.only or args.reroll).split(",")
         unknown = [key for key in targets if key not in every]
         if unknown:
             sys.exit(f"not ability keys in {args.repo}: {', '.join(unknown)}")
@@ -189,6 +191,11 @@ def main() -> None:
         targets = []
 
     build = Build(args)
+    if args.reroll:
+        # A new attempt number changes the cache key, so the next render replaces it;
+        # the old picture is overwritten, not kept.
+        for key in targets:
+            build.reroll(key)
     clashes: list[tuple[str, str, int, float]] = []
     try:
         try:
