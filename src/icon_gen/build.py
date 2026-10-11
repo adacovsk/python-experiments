@@ -235,14 +235,14 @@ def main() -> None:
     parser.add_argument("--backend", choices=("local", "cloudflare"), default="local",
                         help="cloudflare: FLUX.1 schnell on Workers AI (seconds per image, daily free allowance)")
     parser.add_argument("--icon-size", type=int, default=128, help="export size; 128 stays sharp to 250%% UI scale")
-    which = parser.add_mutually_exclusive_group(required=True)
+    which = parser.add_mutually_exclusive_group()
     which.add_argument("--only", help="comma-separated ability keys")
     which.add_argument("--sample", type=int, help="this many abilities spread across types")
     which.add_argument("--all", action="store_true")
     which.add_argument("--report", action="store_true", help="coverage and collisions only")
     which.add_argument("--reroll", help="comma-separated ability keys whose pictures to replace (bad hands, wrong subject)")
-    which.add_argument("--watch", action="store_true",
-                       help="just regenerate icons flagged in the live gallery, as they are flagged, until stopped")
+    parser.add_argument("--watch", action="store_true",
+                        help="after the list (or with no list), keep regenerating icons flagged in the live gallery until stopped")
     # Report-only by default: on dark engraved icons the shape hash matches pictures a
     # person tells apart at a glance, and every automatic re-roll spends allowance.
     parser.add_argument("--max-rerolls", type=int, default=0,
@@ -252,6 +252,8 @@ def main() -> None:
     parser.add_argument("--export", type=Path, help="copy finished icons here, e.g. a bevy-rpg assets dir")
     parser.add_argument("--out", type=Path, default=HERE / "output")
     args = parser.parse_args()
+    if not (args.only or args.sample or args.all or args.report or args.reroll or args.watch):
+        parser.error("choose what to render: --only, --sample, --all, --reroll, --report or --watch")
 
     every = ability_data.load(args.repo)
     if not every:
