@@ -36,6 +36,11 @@ section h2 { font-size:14px; color:var(--muted); margin:16px 0 8px; }
 .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:10px; }
 figure { margin:0; background:var(--card); border:2px solid transparent; border-radius:8px; padding:6px; cursor:pointer; }
 figure.picked { border-color:var(--pick); }
+figure.queued, figure.rendering { border-color:var(--pick); position:relative; }
+figure.queued::after, figure.rendering::after { position:absolute; top:10px; right:10px; padding:2px 6px; border-radius:4px;
+  background:var(--pick); color:#111; font-size:11px; font-weight:600; }
+figure.queued::after { content:"queued"; }
+figure.rendering::after { content:"regenerating…"; }
 figure.fresh { box-shadow:0 0 0 2px var(--new); }
 figure img { width:100%; aspect-ratio:1; display:block; }
 figcaption { font-size:11px; margin-top:4px; overflow-wrap:anywhere; }
@@ -44,6 +49,7 @@ figcaption span { color:var(--muted); }
 </style></head><body>
 <header>
   <h1 id="title">Icon review</h1>
+  <p id="how" style="margin:0 0 8px;color:var(--muted);font-size:12px"></p>
   <div class="bar">
     <input type="search" id="q" placeholder="Filter by key, name or concept">
     <button id="copy">Copy reroll command</button>
@@ -58,6 +64,7 @@ figcaption span { color:var(--muted); }
 const SNAPSHOT = __DATA__;
 const BACKEND = __BACKEND__, REPO = __REPO__;
 const picked = new Set(), seen = new Map();
+const LIVE = location.protocol.startsWith('http');
 let first = true;
 const $ = id => document.getElementById(id);
 
@@ -70,11 +77,24 @@ function card(e) {
   f.querySelector('img').src = `${e.src}?v=${e.mtime}`;
   f.querySelector('b').textContent = e.name;
   f.querySelector('span').textContent = e.key;
-  if (picked.has(e.key)) f.classList.add('picked');
-  f.addEventListener('click', () => {
-    picked.has(e.key) ? picked.delete(e.key) : picked.add(e.key);
-    f.classList.toggle('picked'); refresh();
-  });
+  if (LIVE) {
+    if (e.queue) f.classList.add(e.queue);
+    // Live: a click flags it for regeneration on disk; a running build repaints it and
+    // the flag clears itself. Clicking a queued icon un-flags it.
+    f.addEventListener('click', async () => {
+      if (f.classList.contains('rendering')) return;
+      const queued = !f.classList.contains('queued');
+      f.classList.toggle('queued', queued);
+      await fetch('queue', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({key: e.key, queued})});
+    });
+  } else {
+    if (picked.has(e.key)) f.classList.add('picked');
+    f.addEventListener('click', () => {
+      picked.has(e.key) ? picked.delete(e.key) : picked.add(e.key);
+      f.classList.toggle('picked'); refresh();
+    });
+  }
   return f;
 }
 
@@ -119,12 +139,15 @@ $('copy').onclick = () => { $('cmd').select(); navigator.clipboard?.writeText($(
 $('clear').onclick = () => { picked.clear(); document.querySelectorAll('figure.picked').forEach(f => f.classList.remove('picked')); refresh(); };
 
 render(SNAPSHOT);
-if (location.protocol.startsWith('http')) {
-  let last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime]));
+if (LIVE) {
+  for (const id of ['copy', 'clear', 'n', 'cmd']) $(id).style.display = 'none';
+  $('how').textContent = 'Click an icon to flag it for regeneration (click again to un-flag). ' +
+    'A running build repaints flagged icons first; the new one swaps in with a green outline.';
+  let last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime, e.queue]));
   const poll = async () => {
     try {
       const entries = await (await fetch('gallery.json', {cache: 'no-store'})).json();
-      const sig = JSON.stringify(entries.map(e => [e.key, e.mtime]));
+      const sig = JSON.stringify(entries.map(e => [e.key, e.mtime, e.queue]));
       if (sig !== last) { last = sig; render(entries); }
       $('live').textContent = `live · ${new Date().toLocaleTimeString()}`;
     } catch { $('live').textContent = 'live · server not responding'; }
@@ -135,6 +158,14 @@ if (location.protocol.startsWith('http')) {
 }
 </script></body></html>
 """
+
+
+def queue_state(icons_dir: Path, key: str) -> str:
+    """"" if not flagged, "queued" if waiting, "rendering" once a build has claimed it."""
+    queue = icons_dir.parent.parent / "queue"
+    if (queue / key).exists():
+        return "queued"
+    return "rendering" if any(queue.glob(f"{key}.*")) else ""
 
 
 def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts: dict[str, str]) -> list[dict]:
@@ -152,6 +183,7 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
             "src": path.relative_to(base).as_posix(),
             # Changes when an icon is re-rolled, so the page reloads that one image.
             "mtime": int(path.stat().st_mtime),
+            "queue": queue_state(icons_dir, path.stem),
         })
     return found
 

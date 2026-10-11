@@ -6,6 +6,7 @@
     pixi run icons --report                    # coverage only, renders nothing
     pixi run icons --reroll hermit,frostbite   # throw away these pictures and paint new ones
     pixi run icons --all --model flux --reverse   # local FLUX from the back while Cloudflare takes the front
+    pixi run icons --backend cloudflare --watch   # regenerate whatever gets flagged in the live gallery
 
 For each ability:
 1. **Picture** — the AI paints one concrete subject in full colour on a plain black
@@ -32,6 +33,7 @@ import math
 import os
 import shutil
 import sys
+import time
 import zlib
 from pathlib import Path
 
@@ -70,6 +72,32 @@ def seed_for(key: str, attempt: int) -> int:
     return zlib.crc32(key.encode()) % 1_000_000 + attempt * 1_000_003
 
 
+class Queue:
+    """Icons flagged for regeneration in the live gallery: one empty file per key in
+    `<set>/queue/`. A build claims a flag by renaming it to `<key>.<pid>` — atomic, so
+    when two builds fill the set at once exactly one repaints it — and deletes it once
+    the new picture is in, which is what clears the flag on the page."""
+
+    def __init__(self, directory: Path):
+        self.directory = directory
+        directory.mkdir(parents=True, exist_ok=True)
+
+    def flagged(self) -> list[str]:
+        return sorted(p.name for p in self.directory.iterdir() if "." not in p.name)
+
+    def claim(self, key: str) -> Path | None:
+        claimed = self.directory / f"{key}.{os.getpid()}"
+        try:
+            os.rename(self.directory / key, claimed)
+        except FileNotFoundError:
+            return None  # un-flagged, or the other build got there first
+        return claimed
+
+    def release(self, claimed: Path, key: str) -> None:
+        """Put a claim back unfinished (allowance ran out), so the flag stays up."""
+        os.rename(claimed, self.directory / key)
+
+
 class Build:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -85,6 +113,7 @@ class Build:
         self._renderer: Renderer | CloudflareRenderer | None = None
         self.refused: list[str] = []
         self.bumped: dict[str, int] = {}  # re-rolled keys -> the attempt to render next
+        self.queue = Queue(self.out / "queue")
 
     def renderer(self) -> Renderer | CloudflareRenderer:
         # Started on first use: a run with every picture cached never loads the model.
@@ -135,6 +164,23 @@ class Build:
         temporary = self.manifest_path.with_suffix(f".{os.getpid()}.tmp")
         temporary.write_text(json.dumps(on_disk, indent=1, sort_keys=True))
         os.replace(temporary, self.manifest_path)
+
+    def drain(self, every: dict[str, ability_data.Ability]) -> int:
+        """Repaint every icon flagged in the gallery, ahead of the run's own list."""
+        done = 0
+        for key in self.queue.flagged():
+            if key not in every or (claimed := self.queue.claim(key)) is None:
+                continue
+            self.reroll(key)
+            try:
+                made = self.make(every[key])
+            except QuotaExhausted:
+                self.queue.release(claimed, key)
+                raise
+            claimed.unlink(missing_ok=True)
+            done += 1
+            print(f"  regenerated {key} (flagged in the gallery){'' if made else ', refused by the content filter'}", flush=True)
+        return done
 
     def make(self, ability: ability_data.Ability) -> Path | None:
         try:
@@ -195,6 +241,8 @@ def main() -> None:
     which.add_argument("--all", action="store_true")
     which.add_argument("--report", action="store_true", help="coverage and collisions only")
     which.add_argument("--reroll", help="comma-separated ability keys whose pictures to replace (bad hands, wrong subject)")
+    which.add_argument("--watch", action="store_true",
+                       help="just regenerate icons flagged in the live gallery, as they are flagged, until stopped")
     # Report-only by default: on dark engraved icons the shape hash matches pictures a
     # person tells apart at a glance, and every automatic re-roll spends allowance.
     parser.add_argument("--max-rerolls", type=int, default=0,
@@ -217,10 +265,10 @@ def main() -> None:
         targets = sample(every, args.sample)
     elif args.all:
         targets = sorted(every)
-    if args.reverse:
-        targets = targets[::-1]
     else:
         targets = []
+    if args.reverse:
+        targets = targets[::-1]
 
     build = Build(args)
     if args.reroll:
@@ -231,17 +279,25 @@ def main() -> None:
     clashes: list[tuple[str, str, int, float]] = []
     try:
         try:
+            done = 0
             for done, key in enumerate(targets, start=1):
+                # Flags set in the gallery jump the queue: someone is waiting on those.
+                build.drain(every)
                 made = build.make(every[key])
                 print(f"[{done}/{len(targets)}] {key}{'' if made else '  (refused by the content filter)'}", flush=True)
                 # A long batch runs for hours; keep the review page current as it goes.
                 if done % 25 == 0:
                     gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
+            if not args.report:
+                build.drain(every)
+            while args.watch:
+                if not build.drain(every):
+                    time.sleep(10)
         except QuotaExhausted as spent:
             # Everything rendered so far is cached; re-running the same command resumes.
-            print(f"Daily allowance used up after {done - 1} new picture(s): {spent}", flush=True)
+            print(f"Daily allowance used up after {max(done - 1, 0)} new picture(s): {spent}", flush=True)
             print("Re-run the same command after 00:00 UTC to continue.", flush=True)
-            targets = targets[:done - 1]
+            targets = targets[:max(done - 1, 0)]
             args.max_rerolls = 0  # re-rolls would need the allowance that just ran out
 
         # Uniqueness over every finished icon on disk, not only this run's, so a new
