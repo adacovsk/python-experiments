@@ -171,7 +171,11 @@ def queue_state(icons_dir: Path, key: str) -> str:
 def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts: dict[str, str]) -> list[dict]:
     """Every icon on disk whose key is still an ability, as the page renders them."""
     found = []
+    # "*.png" alone would also match a half-written "<key>.<pid>.part"-style temp file
+    # only if it ended in .png; the stem check keeps any dotted name out regardless.
     for path in sorted(icons_dir.glob("*.png")):
+        if "." in path.stem:
+            continue
         ability = abilities.get(path.stem)
         if ability is None:
             continue

@@ -28,6 +28,7 @@ Outputs land in src/icon_gen/output/<set>/ (default `main`, shared by both backe
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import math
 import os
@@ -72,6 +73,23 @@ def seed_for(key: str, attempt: int) -> int:
     return zlib.crc32(key.encode()) % 1_000_000 + attempt * 1_000_003
 
 
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    return True
+
+
+def write_atomically(path: Path, data: bytes) -> None:
+    """Readers (the gallery, the other build) see the old file or the new one, never half."""
+    temporary = path.with_suffix(f".{os.getpid()}.part")
+    temporary.write_bytes(data)
+    os.replace(temporary, path)
+
+
 class Queue:
     """Icons flagged for regeneration in the live gallery: one empty file per key in
     `<set>/queue/`. A build claims a flag by renaming it to `<key>.<pid>` — atomic, so
@@ -83,7 +101,20 @@ class Queue:
         directory.mkdir(parents=True, exist_ok=True)
 
     def flagged(self) -> list[str]:
+        self.recover()
         return sorted(p.name for p in self.directory.iterdir() if "." not in p.name)
+
+    def recover(self) -> None:
+        """Release claims whose process is gone (killed, crashed, rebooted), so their
+        flags go back in the queue instead of reading "regenerating" forever."""
+        for claimed in self.directory.glob("*.*"):
+            key, _, pid = claimed.name.rpartition(".")
+            if not pid.isdigit() or alive(int(pid)):
+                continue
+            try:
+                os.rename(claimed, self.directory / key)
+            except FileNotFoundError:
+                pass  # another build recovered it first
 
     def claim(self, key: str) -> Path | None:
         claimed = self.directory / f"{key}.{os.getpid()}"
@@ -147,7 +178,7 @@ class Build:
         if path.exists() and entry.get("prompt") == prompt and entry.get("seed") == seed:
             return path.read_bytes()
         png = self.renderer().render(prompt, NEGATIVE, seed)
-        path.write_bytes(png)
+        write_atomically(path, png)
         self.record(ability.key, {"prompt": prompt, "seed": seed, "attempt": attempt})
         return png
 
@@ -190,7 +221,9 @@ class Build:
             return None
         icon = compose(ability, picture, self.args.icon_size)
         path = self.icons / f"{ability.key}.png"
-        icon.save(path)
+        encoded = io.BytesIO()
+        icon.save(encoded, format="PNG")
+        write_atomically(path, encoded.getvalue())
         return path
 
     def reroll(self, key: str) -> None:
