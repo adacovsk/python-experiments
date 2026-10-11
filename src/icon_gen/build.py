@@ -205,6 +205,9 @@ def main() -> None:
             for done, key in enumerate(targets, start=1):
                 made = build.make(every[key])
                 print(f"[{done}/{len(targets)}] {key}{'' if made else '  (refused by the content filter)'}", flush=True)
+                # A long batch runs for hours; keep the review page current as it goes.
+                if done % 25 == 0:
+                    gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
         except QuotaExhausted as spent:
             # Everything rendered so far is cached; re-running the same command resumes.
             print(f"Daily allowance used up after {done - 1} new picture(s): {spent}", flush=True)
