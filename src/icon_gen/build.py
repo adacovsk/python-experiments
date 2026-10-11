@@ -34,7 +34,7 @@ from PIL import Image
 
 import abilities as ability_data
 from compose import compose, palette
-from render import Renderer
+from render import CloudflareRenderer, PromptRefused, QuotaExhausted, Renderer
 from unique import collisions, fingerprint
 
 HERE = Path(__file__).resolve().parent
@@ -67,20 +67,26 @@ def seed_for(key: str, attempt: int) -> int:
 class Build:
     def __init__(self, args: argparse.Namespace):
         self.args = args
-        self.out = args.out / args.model
+        # Cloudflare renders are kept apart from local ones: its pictures are not seeded,
+        # so a local manifest's seeds would mean nothing for them.
+        self.out = args.out / ("cloudflare" if args.backend == "cloudflare" else args.model)
         self.glyphs = self.out / "glyphs"
         self.icons = self.out / "icons" / str(args.icon_size)
         self.glyphs.mkdir(parents=True, exist_ok=True)
         self.icons.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.out / "manifest.json"
         self.manifest: dict[str, dict] = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
-        self._renderer: Renderer | None = None
+        self._renderer: Renderer | CloudflareRenderer | None = None
+        self.refused: list[str] = []
 
-    def renderer(self) -> Renderer:
+    def renderer(self) -> Renderer | CloudflareRenderer:
         # Started on first use: a run with every picture cached never loads the model.
         if self._renderer is None:
-            print(f"Loading {self.args.model} ...", flush=True)
-            self._renderer = Renderer(self.args.model).__enter__()
+            if self.args.backend == "cloudflare":
+                self._renderer = CloudflareRenderer().__enter__()
+            else:
+                print(f"Loading {self.args.model} ...", flush=True)
+                self._renderer = Renderer(self.args.model).__enter__()
         return self._renderer
 
     def close(self) -> None:
@@ -106,8 +112,13 @@ class Build:
         self.manifest_path.write_text(json.dumps(self.manifest, indent=1, sort_keys=True))
         return png
 
-    def make(self, ability: ability_data.Ability) -> Path:
-        icon = compose(ability, self.glyph(ability), self.args.icon_size)
+    def make(self, ability: ability_data.Ability) -> Path | None:
+        try:
+            picture = self.glyph(ability)
+        except PromptRefused:
+            self.refused.append(ability.key)
+            return None
+        icon = compose(ability, picture, self.args.icon_size)
         path = self.icons / f"{ability.key}.png"
         icon.save(path)
         return path
@@ -146,7 +157,9 @@ def sample(all_abilities: dict[str, ability_data.Ability], count: int) -> list[s
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
-    parser.add_argument("--model", choices=("turbo", "flux"), default="turbo")
+    parser.add_argument("--model", choices=("turbo", "flux"), default="turbo", help="local backend's model")
+    parser.add_argument("--backend", choices=("local", "cloudflare"), default="local",
+                        help="cloudflare: FLUX.1 schnell on Workers AI (seconds per image, daily free allowance)")
     parser.add_argument("--icon-size", type=int, default=128, help="export size; 128 stays sharp to 250%% UI scale")
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--only", help="comma-separated ability keys")
@@ -178,9 +191,16 @@ def main() -> None:
     build = Build(args)
     clashes: list[tuple[str, str, int, float]] = []
     try:
-        for done, key in enumerate(targets, start=1):
-            build.make(every[key])
-            print(f"[{done}/{len(targets)}] {key}", flush=True)
+        try:
+            for done, key in enumerate(targets, start=1):
+                made = build.make(every[key])
+                print(f"[{done}/{len(targets)}] {key}{'' if made else '  (refused by the content filter)'}", flush=True)
+        except QuotaExhausted as spent:
+            # Everything rendered so far is cached; re-running the same command resumes.
+            print(f"Daily allowance used up after {done - 1} new picture(s): {spent}", flush=True)
+            print("Re-run the same command after 00:00 UTC to continue.", flush=True)
+            targets = targets[:done - 1]
+            args.max_rerolls = 0  # re-rolls would need the allowance that just ran out
 
         # Uniqueness over every finished icon on disk, not only this run's, so a new
         # icon cannot quietly duplicate one rendered in an earlier batch.
@@ -212,8 +232,11 @@ def main() -> None:
     for key in orphans:
         print(f"  orphan: {key}")
 
-    if targets:
-        sheet([build.icons / f"{key}.png" for key in targets], build.out / "sheet.png", cell=args.icon_size)
+    if build.refused:
+        print(f"Refused by the content filter, reword their concepts: {', '.join(build.refused)}")
+    shown = [build.icons / f"{key}.png" for key in targets if (build.icons / f"{key}.png").exists()]
+    if shown:
+        sheet(shown, build.out / "sheet.png", cell=args.icon_size)
         print(f"Contact sheet: {build.out / 'sheet.png'}")
     if args.export:
         args.export.mkdir(parents=True, exist_ok=True)
