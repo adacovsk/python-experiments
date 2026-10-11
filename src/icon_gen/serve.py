@@ -1,5 +1,8 @@
 """Serve the review gallery live: `pixi run icons-gallery`, then open the printed URL.
 
+Clicking an icon flags it for regeneration (POST /queue); a running build repaints
+flagged icons first and clears the flag.
+
 `gallery.json` is computed from the icon folder on every request, so the page shows
 icons as a running batch finishes them, including a batch started before this server.
 Bound to 127.0.0.1 only.
@@ -40,6 +43,28 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         super().do_GET()
+
+    def do_POST(self) -> None:
+        """Flag or un-flag an icon for regeneration: an empty file per key in queue/."""
+        if self.path.split("?", 1)[0] != "/queue":
+            self.send_error(404)
+            return
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 2) or b"{}")
+        key, queued = str(body.get("key", "")), bool(body.get("queued"))
+        # Keys come from the page, so only accept ones that are real abilities: this is
+        # what keeps a crafted request from naming a path outside the queue folder.
+        if key not in self.every:
+            self.send_error(400, "unknown ability key")
+            return
+        queue = self.out / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        flag = queue / key
+        if queued:
+            flag.touch()
+        else:
+            flag.unlink(missing_ok=True)
+        self.send_response(204)
+        self.end_headers()
 
     def log_message(self, *_: object) -> None:
         pass  # one line per poll every five seconds is noise
