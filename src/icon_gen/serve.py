@@ -47,14 +47,14 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("cloudflare", "flux", "turbo"), default="cloudflare",
-                        help="which output folder to serve")
+    parser.add_argument("--set", default="main", help="which output set to serve")
     parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    out = HERE / "output" / args.backend
+    out = HERE / "output" / args.set
     every = ability_data.load(args.repo)
-    handler = functools.partial(Handler, out=out, every=every, backend=args.backend)
+    # The reroll command the page builds names a backend; Cloudflare is the fast one.
+    handler = functools.partial(Handler, out=out, every=every, backend="cloudflare")
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     print(f"Live gallery: http://127.0.0.1:{args.port}/gallery.html  (Ctrl+C to stop)", flush=True)
     server.serve_forever()

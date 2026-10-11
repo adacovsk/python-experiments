@@ -5,6 +5,7 @@
     pixi run icons --all                       # every ability (resumable; run overnight)
     pixi run icons --report                    # coverage only, renders nothing
     pixi run icons --reroll hermit,frostbite   # throw away these pictures and paint new ones
+    pixi run icons --all --model flux --reverse   # local FLUX from the back while Cloudflare takes the front
 
 For each ability:
 1. **Picture** — the AI paints one concrete subject in full colour on a plain black
@@ -18,7 +19,7 @@ For each ability:
 4. **Coverage** — every ability key has an icon and a concept, and nothing is left for
    a deleted key.
 
-Outputs land in src/icon_gen/output/<backend or model>/: `glyphs/` (raw pictures),
+Outputs land in src/icon_gen/output/<set>/ (default `main`, shared by both backends): `glyphs/` (raw pictures),
 `icons/<size>/` (finished icons, named by ability key), `manifest.json`, `sheet.png`
 (this run's batch), and `gallery.html` (every icon, labelled, click to build a
 `--reroll` command).
@@ -28,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import shutil
 import sys
 import zlib
@@ -71,9 +73,9 @@ def seed_for(key: str, attempt: int) -> int:
 class Build:
     def __init__(self, args: argparse.Namespace):
         self.args = args
-        # Cloudflare renders are kept apart from local ones: its pictures are not seeded,
-        # so a local manifest's seeds would mean nothing for them.
-        self.out = args.out / ("cloudflare" if args.backend == "cloudflare" else args.model)
+        # One set per --set name, shared by every backend: the prompts are identical, so a
+        # picture from either is interchangeable, and both can fill the same set at once.
+        self.out = args.out / args.set
         self.glyphs = self.out / "glyphs"
         self.icons = self.out / "icons" / str(args.icon_size)
         self.glyphs.mkdir(parents=True, exist_ok=True)
@@ -82,6 +84,7 @@ class Build:
         self.manifest: dict[str, dict] = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
         self._renderer: Renderer | CloudflareRenderer | None = None
         self.refused: list[str] = []
+        self.bumped: dict[str, int] = {}  # re-rolled keys -> the attempt to render next
 
     def renderer(self) -> Renderer | CloudflareRenderer:
         # Started on first use: a run with every picture cached never loads the model.
@@ -98,8 +101,12 @@ class Build:
             self._renderer.__exit__()
 
     def glyph(self, ability: ability_data.Ability) -> bytes:
+        # Read fresh: the other build filling this set may have painted it since we
+        # started. A re-rolled key's bumped attempt is applied on top.
+        if self.manifest_path.exists():
+            self.manifest = json.loads(self.manifest_path.read_text())
         entry = self.manifest.get(ability.key, {})
-        attempt = entry.get("attempt", 0)
+        attempt = self.bumped.get(ability.key, entry.get("attempt", 0))
         # A written concept is one concrete image ("a hawk on a gloved fist"); the record's
         # own text is the fallback, and often has nothing drawable in it.
         subject = CONCEPTS.get(ability.key) or ability.prompt_subject()
@@ -112,9 +119,22 @@ class Build:
             return path.read_bytes()
         png = self.renderer().render(prompt, NEGATIVE, seed)
         path.write_bytes(png)
-        self.manifest[ability.key] = {"prompt": prompt, "seed": seed, "attempt": attempt}
-        self.manifest_path.write_text(json.dumps(self.manifest, indent=1, sort_keys=True))
+        self.record(ability.key, {"prompt": prompt, "seed": seed, "attempt": attempt})
         return png
+
+    def record(self, key: str, entry: dict) -> None:
+        """Save one key's manifest entry without losing anyone else's.
+
+        Two builds can fill a set at once (Cloudflare from the front, local from the
+        back), so the file is re-read and merged rather than overwritten from this
+        process's copy, and replaced atomically so a reader never sees half of it.
+        """
+        on_disk = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
+        on_disk[key] = entry
+        self.manifest = {**on_disk, **{key: entry}}
+        temporary = self.manifest_path.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(on_disk, indent=1, sort_keys=True))
+        os.replace(temporary, self.manifest_path)
 
     def make(self, ability: ability_data.Ability) -> Path | None:
         try:
@@ -128,7 +148,8 @@ class Build:
         return path
 
     def reroll(self, key: str) -> None:
-        self.manifest.setdefault(key, {})["attempt"] = self.manifest.get(key, {}).get("attempt", 0) + 1
+        current = self.bumped.get(key, self.manifest.get(key, {}).get("attempt", 0))
+        self.bumped[key] = current + 1
 
 
 def sheet(paths: list[Path], dest: Path, cell: int) -> None:
@@ -162,6 +183,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
     parser.add_argument("--model", choices=("turbo", "flux"), default="turbo", help="local backend's model")
+    parser.add_argument("--set", default="main", help="output set; every backend can fill the same one")
+    parser.add_argument("--reverse", action="store_true",
+                        help="work from the end of the list, so a second build can fill the set from the other side")
     parser.add_argument("--backend", choices=("local", "cloudflare"), default="local",
                         help="cloudflare: FLUX.1 schnell on Workers AI (seconds per image, daily free allowance)")
     parser.add_argument("--icon-size", type=int, default=128, help="export size; 128 stays sharp to 250%% UI scale")
@@ -193,6 +217,8 @@ def main() -> None:
         targets = sample(every, args.sample)
     elif args.all:
         targets = sorted(every)
+    if args.reverse:
+        targets = targets[::-1]
     else:
         targets = []
 
