@@ -18,8 +18,10 @@ For each ability:
 4. **Coverage** — every ability key has an icon and a concept, and nothing is left for
    a deleted key.
 
-Outputs land in src/icon_gen/output/<model>/: `glyphs/` (512px renders),
-`icons/<size>/` (finished icons), `manifest.json`, and `sheet.png`.
+Outputs land in src/icon_gen/output/<backend or model>/: `glyphs/` (raw pictures),
+`icons/<size>/` (finished icons, named by ability key), `manifest.json`, `sheet.png`
+(this run's batch), and `gallery.html` (every icon, labelled, click to build a
+`--reroll` command).
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ from pathlib import Path
 from PIL import Image
 
 import abilities as ability_data
+import gallery
 from compose import compose, palette
 from render import CloudflareRenderer, PromptRefused, QuotaExhausted, Renderer
 from unique import collisions, fingerprint
@@ -245,6 +248,8 @@ def main() -> None:
     if shown:
         sheet(shown, build.out / "sheet.png", cell=args.icon_size)
         print(f"Contact sheet: {build.out / 'sheet.png'}")
+    page = gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
+    print(f"Review gallery: {page}")
     if args.export:
         args.export.mkdir(parents=True, exist_ok=True)
         for key in sorted(present & set(every)):
