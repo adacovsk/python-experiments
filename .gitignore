@@ -25,6 +25,8 @@ build/
 *.pth
 *.onnx
 *.pt
+*.gguf
+*.safetensors
 
 # Processing artifacts
 video-ml/enhanced_images/
@@ -47,3 +49,9 @@ Thumbs.db
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# Local binaries (fetched by setup scripts)
+tools/
+
+# icon_gen renders
+src/icon_gen/output/

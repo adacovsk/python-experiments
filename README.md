@@ -26,6 +26,24 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 **Model**: Pre-trained PyTorch model (64 MB)
 - RealESRGAN_x4plus.pth - 4x super-resolution enhancement
 
+### 🎨 [icon_gen/](src/icon_gen/)
+An icon for every ability in a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, rendered locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and composed from each record's own data:
+- **Glyph** - an AI render of a light emblem on black, prompted from the ability's name and description
+- **Compose** - frame shape by ability type, glyph tinted by damage type / harm-heal-help / tradition, vector badges for action cost and area shape (`palette.toml`)
+- **Uniqueness** - icons too alike in shape *and* colour get the later key's glyph re-rolled
+- **Coverage** - reports abilities without an icon and icons whose key no longer exists
+
+```bash
+pixi run icons-setup                 # pinned sd binaries + weights (~15 GB, gitignored)
+pixi run icons --sample 20           # a spread across ability types, for review
+pixi run icons --only fireball,heal  # specific keys
+pixi run icons --all                 # everything; resumable, glyphs are cached
+pixi run icons --report              # coverage and collisions only
+```
+Options: `--model turbo|flux`, `--icon-size` (default 128: sharp up to 250% UI scale), `--export <dir>`.
+
+**Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · TAESD/TAEF1 decoders
+
 ### 📊 [benchmarks/](src/benchmarks/)
 Performance benchmarks and comparisons:
 - Pandas vs Polars on 10M rows
