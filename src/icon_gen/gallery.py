@@ -49,11 +49,12 @@ figcaption span {{ color:var(--muted); }}
 {sections}
 <script>
 const BACKEND = {backend};
+const REPO = {repo};
 const picked = new Set();
 const cmd = document.getElementById('cmd'), n = document.getElementById('n');
 function refresh() {{
   const keys = [...picked].sort();
-  cmd.value = keys.length ? `pixi run icons ${{BACKEND}}--reroll ${{keys.join(',')}}` : '';
+  cmd.value = keys.length ? `cd ${{REPO}} && pixi run icons ${{BACKEND}}--reroll ${{keys.join(',')}}` : '';
   n.textContent = `${{keys.length}} selected`;
 }}
 document.querySelectorAll('figure').forEach(f => f.addEventListener('click', () => {{
@@ -98,5 +99,7 @@ def write(dest: Path, icons_dir: Path, abilities: dict[str, Ability], concepts: 
         count=sum(len(keys) for keys in by_kind.values()),
         sections="\n".join(sections),
         backend=json.dumps(flag),
+        # The command is pasted into whatever terminal is open, so it carries its own cd.
+        repo=json.dumps(str(Path(__file__).resolve().parents[2])),
     ))
     return dest
