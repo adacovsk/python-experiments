@@ -8,6 +8,7 @@ version = "0.1.0"
 [tasks]
 icons-setup = "bash src/icon_gen/setup.sh"
 icons = "python src/icon_gen/build.py"
+icons-gallery = "python src/icon_gen/serve.py"
 
 [dependencies]
 python = ">=3.14.3,<3.15"

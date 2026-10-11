@@ -1,105 +1,169 @@
-"""A local review page for every finished icon: labelled, grouped by ability type,
+"""A review page for every finished icon: labelled, grouped by ability type,
 click-to-select, with the `--reroll` command for the selection ready to copy.
 
-Written next to the icons as `gallery.html` after every build, and opened straight
-from disk (file://), so nothing is uploaded anywhere.
+Written next to the icons as `gallery.html` after builds. Opened from disk it is a
+snapshot of the icons at the time it was written. Served by `serve.py`
+(`pixi run icons-gallery`) it is live: it polls `gallery.json`, which the server
+reads fresh from disk, so icons appear as a running batch finishes them and a
+re-rolled icon refreshes in place. Nothing is uploaded anywhere either way.
 """
 from __future__ import annotations
 
-import html
 import json
 from pathlib import Path
 
 from abilities import Ability
+
+REPO = Path(__file__).resolve().parents[2]
 
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Icon review</title>
 <style>
-:root {{ --bg:#16161b; --card:#202028; --text:#e8e4dc; --muted:#9a968e; --pick:#e0a040; }}
-body {{ margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, sans-serif; }}
-header {{ position:sticky; top:0; z-index:2; background:#101014ee; padding:12px 16px; border-bottom:1px solid #333; }}
-header h1 {{ font-size:16px; margin:0 0 8px; }}
-.bar {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
-input[type=search] {{ flex:1; min-width:180px; padding:6px 8px; background:#222; color:var(--text); border:1px solid #444; border-radius:6px; }}
-button {{ padding:6px 10px; background:#333; color:var(--text); border:1px solid #555; border-radius:6px; cursor:pointer; }}
-#cmd {{ width:100%; box-sizing:border-box; margin-top:8px; padding:6px 8px; background:#0c0c10; color:var(--pick);
-        border:1px solid #444; border-radius:6px; font:12px ui-monospace, monospace; }}
-section {{ padding:8px 16px; }}
-section h2 {{ font-size:14px; color:var(--muted); margin:16px 0 8px; }}
-.grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:10px; }}
-figure {{ margin:0; background:var(--card); border:2px solid transparent; border-radius:8px; padding:6px; cursor:pointer; }}
-figure.picked {{ border-color:var(--pick); }}
-figure img {{ width:100%; aspect-ratio:1; display:block; }}
-figcaption {{ font-size:11px; margin-top:4px; overflow-wrap:anywhere; }}
-figcaption b {{ display:block; font-size:12px; }}
-figcaption span {{ color:var(--muted); }}
+:root { --bg:#16161b; --card:#202028; --text:#e8e4dc; --muted:#9a968e; --pick:#e0a040; --new:#5fbf7f; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, sans-serif; }
+header { position:sticky; top:0; z-index:2; background:#101014ee; padding:12px 16px; border-bottom:1px solid #333; }
+header h1 { font-size:16px; margin:0 0 8px; }
+.bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+input[type=search] { flex:1; min-width:180px; padding:6px 8px; background:#222; color:var(--text); border:1px solid #444; border-radius:6px; }
+button { padding:6px 10px; background:#333; color:var(--text); border:1px solid #555; border-radius:6px; cursor:pointer; }
+#cmd { width:100%; box-sizing:border-box; margin-top:8px; padding:6px 8px; background:#0c0c10; color:var(--pick);
+       border:1px solid #444; border-radius:6px; font:12px ui-monospace, monospace; }
+#live { font-size:12px; color:var(--muted); }
+section { padding:8px 16px; }
+section h2 { font-size:14px; color:var(--muted); margin:16px 0 8px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:10px; }
+figure { margin:0; background:var(--card); border:2px solid transparent; border-radius:8px; padding:6px; cursor:pointer; }
+figure.picked { border-color:var(--pick); }
+figure.fresh { box-shadow:0 0 0 2px var(--new); }
+figure img { width:100%; aspect-ratio:1; display:block; }
+figcaption { font-size:11px; margin-top:4px; overflow-wrap:anywhere; }
+figcaption b { display:block; font-size:12px; }
+figcaption span { color:var(--muted); }
 </style></head><body>
 <header>
-  <h1>Icon review — {count} icons · click the bad ones</h1>
+  <h1 id="title">Icon review</h1>
   <div class="bar">
     <input type="search" id="q" placeholder="Filter by key, name or concept">
     <button id="copy">Copy reroll command</button>
     <button id="clear">Clear selection</button>
     <span id="n">0 selected</span>
+    <span id="live"></span>
   </div>
   <input id="cmd" readonly value="">
 </header>
-{sections}
+<main id="main"></main>
 <script>
-const BACKEND = {backend};
-const REPO = {repo};
-const picked = new Set();
-const cmd = document.getElementById('cmd'), n = document.getElementById('n');
-function refresh() {{
+const SNAPSHOT = __DATA__;
+const BACKEND = __BACKEND__, REPO = __REPO__;
+const picked = new Set(), seen = new Map();
+let first = true;
+const $ = id => document.getElementById(id);
+
+function card(e) {
+  const f = document.createElement('figure');
+  f.dataset.key = e.key;
+  f.dataset.text = `${e.key} ${e.name} ${e.concept}`.toLowerCase();
+  f.title = e.concept;
+  f.innerHTML = `<img loading="lazy" alt=""><figcaption><b></b><span></span></figcaption>`;
+  f.querySelector('img').src = `${e.src}?v=${e.mtime}`;
+  f.querySelector('b').textContent = e.name;
+  f.querySelector('span').textContent = e.key;
+  if (picked.has(e.key)) f.classList.add('picked');
+  f.addEventListener('click', () => {
+    picked.has(e.key) ? picked.delete(e.key) : picked.add(e.key);
+    f.classList.toggle('picked'); refresh();
+  });
+  return f;
+}
+
+function render(entries) {
+  const groups = new Map();
+  for (const e of entries) {
+    if (!groups.has(e.kind)) groups.set(e.kind, []);
+    groups.get(e.kind).push(e);
+  }
+  const main = $('main');
+  main.replaceChildren();
+  for (const kind of [...groups.keys()].sort()) {
+    const s = document.createElement('section');
+    s.innerHTML = `<h2></h2><div class="grid"></div>`;
+    s.querySelector('h2').textContent = `${kind} · ${groups.get(kind).length}`;
+    const grid = s.querySelector('.grid');
+    for (const e of groups.get(kind)) {
+      const f = card(e);
+      // Highlight what arrived or changed since the page opened.
+      if (!first && seen.get(e.key) !== e.mtime) f.classList.add('fresh');
+      grid.appendChild(f);
+    }
+    main.appendChild(s);
+  }
+  for (const e of entries) seen.set(e.key, e.mtime);
+  first = false;
+  $('title').textContent = `Icon review — ${entries.length} icons · click the bad ones`;
+  filter();
+}
+
+function refresh() {
   const keys = [...picked].sort();
-  cmd.value = keys.length ? `cd ${{REPO}} && pixi run icons ${{BACKEND}}--reroll ${{keys.join(',')}}` : '';
-  n.textContent = `${{keys.length}} selected`;
-}}
-document.querySelectorAll('figure').forEach(f => f.addEventListener('click', () => {{
-  const k = f.dataset.key;
-  picked.has(k) ? picked.delete(k) : picked.add(k);
-  f.classList.toggle('picked');
-  refresh();
-}}));
-document.getElementById('copy').onclick = () => {{ cmd.select(); navigator.clipboard?.writeText(cmd.value); }};
-document.getElementById('clear').onclick = () => {{
-  picked.clear(); document.querySelectorAll('figure.picked').forEach(f => f.classList.remove('picked')); refresh();
-}};
-document.getElementById('q').oninput = e => {{
-  const q = e.target.value.toLowerCase();
+  $('cmd').value = keys.length ? `cd ${REPO} && pixi run icons ${BACKEND}--reroll ${keys.join(',')}` : '';
+  $('n').textContent = `${keys.length} selected`;
+}
+function filter() {
+  const q = $('q').value.toLowerCase();
   document.querySelectorAll('figure').forEach(f => f.style.display = f.dataset.text.includes(q) ? '' : 'none');
-}};
+}
+$('q').oninput = filter;
+$('copy').onclick = () => { $('cmd').select(); navigator.clipboard?.writeText($('cmd').value); };
+$('clear').onclick = () => { picked.clear(); document.querySelectorAll('figure.picked').forEach(f => f.classList.remove('picked')); refresh(); };
+
+render(SNAPSHOT);
+if (location.protocol.startsWith('http')) {
+  let last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime]));
+  const poll = async () => {
+    try {
+      const entries = await (await fetch('gallery.json', {cache: 'no-store'})).json();
+      const sig = JSON.stringify(entries.map(e => [e.key, e.mtime]));
+      if (sig !== last) { last = sig; render(entries); }
+      $('live').textContent = `live · ${new Date().toLocaleTimeString()}`;
+    } catch { $('live').textContent = 'live · server not responding'; }
+  };
+  poll(); setInterval(poll, 5000);
+} else {
+  $('live').textContent = 'snapshot — run `pixi run icons-gallery` for live updates';
+}
 </script></body></html>
 """
 
 
-def write(dest: Path, icons_dir: Path, abilities: dict[str, Ability], concepts: dict[str, str], backend: str) -> Path:
-    """Every icon on disk whose key is still an ability, grouped by ability type."""
-    by_kind: dict[str, list[str]] = {}
+def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts: dict[str, str]) -> list[dict]:
+    """Every icon on disk whose key is still an ability, as the page renders them."""
+    found = []
     for path in sorted(icons_dir.glob("*.png")):
-        if path.stem in abilities:
-            by_kind.setdefault(abilities[path.stem].kind, []).append(path.stem)
-    sections = []
-    for kind in sorted(by_kind):
-        cards = []
-        for key in by_kind[kind]:
-            ability, concept = abilities[key], concepts.get(key, "")
-            text = html.escape(f"{key} {ability.name} {concept}".lower(), quote=True)
-            src = (icons_dir / f"{key}.png").relative_to(dest.parent).as_posix()
-            cards.append(
-                f'<figure data-key="{html.escape(key, quote=True)}" data-text="{text}" title="{html.escape(concept, quote=True)}">'
-                f'<img loading="lazy" src="{html.escape(src, quote=True)}" alt="">'
-                f'<figcaption><b>{html.escape(ability.name)}</b><span>{html.escape(key)}</span></figcaption></figure>'
-            )
-        sections.append(f'<section><h2>{html.escape(kind)} · {len(cards)}</h2><div class="grid">{"".join(cards)}</div></section>')
+        ability = abilities.get(path.stem)
+        if ability is None:
+            continue
+        found.append({
+            "key": path.stem,
+            "name": ability.name,
+            "kind": ability.kind,
+            "concept": concepts.get(path.stem, ""),
+            "src": path.relative_to(base).as_posix(),
+            # Changes when an icon is re-rolled, so the page reloads that one image.
+            "mtime": int(path.stat().st_mtime),
+        })
+    return found
+
+
+def write(dest: Path, icons_dir: Path, abilities: dict[str, Ability], concepts: dict[str, str], backend: str) -> Path:
+    data = entries(icons_dir, dest.parent, abilities, concepts)
     flag = "--backend cloudflare " if backend == "cloudflare" else ""
-    dest.write_text(PAGE.format(
-        count=sum(len(keys) for keys in by_kind.values()),
-        sections="\n".join(sections),
-        backend=json.dumps(flag),
-        # The command is pasted into whatever terminal is open, so it carries its own cd.
-        repo=json.dumps(str(Path(__file__).resolve().parents[2])),
-    ))
+    page = (PAGE
+            # "</" cannot appear inside the inline script, or a concept could end it early.
+            .replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
+            .replace("__BACKEND__", json.dumps(flag))
+            # The command is pasted into whatever terminal is open, so it carries its own cd.
+            .replace("__REPO__", json.dumps(str(REPO))))
+    dest.write_text(page)
     return dest
