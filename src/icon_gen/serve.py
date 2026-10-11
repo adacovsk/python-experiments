@@ -1,0 +1,64 @@
+"""Serve the review gallery live: `pixi run icons-gallery`, then open the printed URL.
+
+`gallery.json` is computed from the icon folder on every request, so the page shows
+icons as a running batch finishes them, including a batch started before this server.
+Bound to 127.0.0.1 only.
+"""
+from __future__ import annotations
+
+import argparse
+import functools
+import json
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import abilities as ability_data
+import gallery
+
+HERE = Path(__file__).resolve().parent
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, out: Path, every: dict, backend: str, **kwargs):
+        self.out, self.every, self.backend = out, every, backend
+        super().__init__(*args, directory=str(out), **kwargs)
+
+    def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path in ("/", "/gallery.html"):
+            concepts = json.loads((HERE / "concepts.json").read_text())
+            gallery.write(self.out / "gallery.html", self.out / "icons" / "128", self.every, concepts, self.backend)
+            self.path = "/gallery.html"
+        elif path == "/gallery.json":
+            concepts = json.loads((HERE / "concepts.json").read_text())
+            body = json.dumps(gallery.entries(self.out / "icons" / "128", self.out, self.every, concepts)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
+    def log_message(self, *_: object) -> None:
+        pass  # one line per poll every five seconds is noise
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("cloudflare", "flux", "turbo"), default="cloudflare",
+                        help="which output folder to serve")
+    parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+    out = HERE / "output" / args.backend
+    every = ability_data.load(args.repo)
+    handler = functools.partial(Handler, out=out, every=every, backend=args.backend)
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
+    print(f"Live gallery: http://127.0.0.1:{args.port}/gallery.html  (Ctrl+C to stop)", flush=True)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
