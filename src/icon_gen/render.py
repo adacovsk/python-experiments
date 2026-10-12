@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import socket
 import subprocess
 import time
 import urllib.error
@@ -64,14 +65,22 @@ MODELS = {
 }
 
 
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 class Renderer:
     """`with Renderer("turbo") as r: png_bytes = r.render(prompt, negative, seed)`."""
 
-    def __init__(self, model: str, size: int = 512, port: int = 7861, log: Path | None = None):
+    def __init__(self, model: str, size: int = 512, port: int | None = None, log: Path | None = None):
         self.model = MODELS[model]
         self.size = size
-        self.url = f"http://127.0.0.1:{port}"
-        self.port = port
+        # A free port of its own: a fixed one meant a new build could end up talking to a
+        # stale server from an earlier run still holding it, and lose the request.
+        self.port = port or free_port()
+        self.url = f"http://127.0.0.1:{self.port}"
         self.log = log or ROOT / "src" / "icon_gen" / "output" / "sd-server.log"
         self.process: subprocess.Popen | None = None
 

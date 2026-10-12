@@ -1,0 +1,14 @@
+[Unit]
+Description=icon_gen: Cloudflare Workers AI renders, riding the daily free allowance
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/python-experiments
+# The worker sources ~/.profile for CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN.
+ExecStart=%h/.pixi/bin/pixi run icons-cloud
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target
