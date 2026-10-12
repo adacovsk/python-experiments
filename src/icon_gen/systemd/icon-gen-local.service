@@ -1,0 +1,15 @@
+[Unit]
+Description=icon_gen: local FLUX renders (from the end of the list, gallery flags first)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/python-experiments
+# sd-server itself runs at nice 19; the builder is mostly waiting on it.
+ExecStart=%h/.pixi/bin/pixi run icons --backend local --model flux --all --reverse --watch
+Nice=19
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target

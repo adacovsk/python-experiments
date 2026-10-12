@@ -1,0 +1,12 @@
+[Unit]
+Description=icon_gen: live review gallery on http://127.0.0.1:8765/gallery.html
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/python-experiments
+ExecStart=%h/.pixi/bin/pixi run icons-gallery
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
