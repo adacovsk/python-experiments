@@ -60,7 +60,10 @@ class Handler(SimpleHTTPRequestHandler):
         queue.mkdir(parents=True, exist_ok=True)
         flag = queue / key
         if queued:
-            flag.touch()
+            # Already being regenerated: the claim is the flag, so a second one would
+            # only queue a needless second repaint once this one finishes.
+            if not any(queue.glob(f"{key}.*")):
+                flag.touch()
         else:
             flag.unlink(missing_ok=True)
         self.send_response(204)
