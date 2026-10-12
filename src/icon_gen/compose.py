@@ -39,6 +39,7 @@ def palette(ability: Ability) -> dict:
     comes from: a divine heal takes the healing palette, not the divine one."""
     for table, value in (
         ("damage_type", ability.damage_type),
+        # "neutral" names no side palette, so it falls through to the ability type's.
         ("side", ability.side),
         ("tradition", ability.tradition),
         ("ability_type", ability.kind),
@@ -86,6 +87,8 @@ def frame_mask(shape: str, size: int, inset: float) -> Image.Image:
         w, h = size - 2 * inset, size - 2 * inset
         draw.polygon([(inset, inset), (inset + w, inset), (inset + w, inset + h * 0.55),
                       (size / 2, inset + h), (inset, inset + h * 0.55)], fill=255)
+    elif shape == "pentagon":
+        draw.polygon(_polygon(5, size, inset), fill=255)
     elif shape == "star":
         c = size / 2
         points = []

@@ -42,7 +42,7 @@ from PIL import Image
 
 import abilities as ability_data
 import gallery
-from compose import compose, palette
+from compose import PALETTE, compose, palette
 from render import CloudflareRenderer, PromptRefused, QuotaExhausted, Renderer
 from unique import collisions, fingerprint
 
@@ -65,7 +65,20 @@ NEGATIVE = "text, letters, numbers, words, border, frame, photo, multiple object
 # Art direction, one per ability key: a single concrete image drawn from the record's
 # name, description and traits. Kept here rather than in the game's records because the
 # engine never reads it.
-CONCEPTS: dict[str, str] = json.loads((HERE / "concepts.json").read_text())
+# Conditions state their side in palette.toml; they have no mechanics to read it from.
+PALETTE_SIDES: dict[str, list[str]] = PALETTE.get("condition_side", {})
+CONCEPT_FILES = {"abilities": "concepts.json", "conditions": "concepts_conditions.json", "effects": "concepts_effects.json"}
+CONCEPTS: dict[str, str] = json.loads((HERE / CONCEPT_FILES["abilities"]).read_text())
+
+
+def load_records(kind: str, repo: Path) -> dict[str, ability_data.Ability]:
+    """The records one set renders: abilities, conditions, or buff/debuff effects."""
+    if kind == "abilities":
+        return ability_data.load(repo)
+    conditions = ability_data.load_conditions(repo, PALETTE_SIDES)
+    if kind == "conditions":
+        return conditions
+    return ability_data.load_effects(repo, set(conditions))
 
 
 def seed_for(key: str, attempt: int) -> int:
@@ -145,6 +158,7 @@ class Build:
         self.refused: list[str] = []
         self.bumped: dict[str, int] = {}  # re-rolled keys -> the attempt to render next
         self.queue = Queue(self.out / "queue")
+        self.pictures: dict[str, str] = {}  # record key -> shared picture key, where one is shared
 
     def renderer(self) -> Renderer | CloudflareRenderer:
         # Started on first use: a run with every picture cached never loads the model.
@@ -165,21 +179,24 @@ class Build:
         # started. A re-rolled key's bumped attempt is applied on top.
         if self.manifest_path.exists():
             self.manifest = json.loads(self.manifest_path.read_text())
-        entry = self.manifest.get(ability.key, {})
-        attempt = self.bumped.get(ability.key, entry.get("attempt", 0))
+        picture = ability.picture or ability.key
+        entry = self.manifest.get(picture, {})
+        attempt = self.bumped.get(picture, entry.get("attempt", 0))
         # A written concept is one concrete image ("a hawk on a gloved fist"); the record's
         # own text is the fallback, and often has nothing drawable in it.
-        subject = CONCEPTS.get(ability.key) or ability.prompt_subject()
+        subject = CONCEPTS.get(picture) or ability.prompt_subject()
         # Asking for the palette's colours up front means the gradient map refines the
-        # picture rather than fighting it.
-        prompt = f"{subject}, rendered in {palette(ability)['words']}, {STYLE}"
-        seed = seed_for(ability.key, attempt)
-        path = self.glyphs / f"{ability.key}.png"
+        # picture rather than fighting it — except for a shared picture, whose records
+        # take different palettes, so it is painted neutral and only recoloured.
+        colours = "" if ability.picture else f", rendered in {palette(ability)['words']}"
+        prompt = f"{subject}{colours}, {STYLE}"
+        seed = seed_for(picture, attempt)
+        path = self.glyphs / f"{picture}.png"
         if path.exists() and entry.get("prompt") == prompt and entry.get("seed") == seed:
             return path.read_bytes()
         png = self.renderer().render(prompt, NEGATIVE, seed)
         write_atomically(path, png)
-        self.record(ability.key, {"prompt": prompt, "seed": seed, "attempt": attempt})
+        self.record(picture, {"prompt": prompt, "seed": seed, "attempt": attempt})
         return png
 
     def record(self, key: str, entry: dict) -> None:
@@ -227,6 +244,8 @@ class Build:
         return path
 
     def reroll(self, key: str) -> None:
+        # Re-rolling one direction of an effect repaints the picture both share.
+        key = self.pictures.get(key, key)
         current = self.bumped.get(key, self.manifest.get(key, {}).get("attempt", 0))
         self.bumped[key] = current + 1
 
@@ -262,7 +281,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
     parser.add_argument("--model", choices=("turbo", "flux"), default="turbo", help="local backend's model")
-    parser.add_argument("--set", default="main", help="output set; every backend can fill the same one")
+    parser.add_argument("--records", choices=tuple(CONCEPT_FILES), default="abilities",
+                        help="what to make icons for: abilities, conditions, or buff/debuff effects")
+    parser.add_argument("--set", help="output set (default: main for abilities, else the records name)")
     parser.add_argument("--reverse", action="store_true",
                         help="work from the end of the list, so a second build can fill the set from the other side")
     parser.add_argument("--backend", choices=("local", "cloudflare"), default="local",
@@ -288,9 +309,13 @@ def main() -> None:
     if not (args.only or args.sample or args.all or args.report or args.reroll or args.watch):
         parser.error("choose what to render: --only, --sample, --all, --reroll, --report or --watch")
 
-    every = ability_data.load(args.repo)
+    global CONCEPTS
+    concept_file = HERE / CONCEPT_FILES[args.records]
+    CONCEPTS = json.loads(concept_file.read_text()) if concept_file.exists() else {}
+    args.set = args.set or ("main" if args.records == "abilities" else args.records)
+    every = load_records(args.records, args.repo)
     if not every:
-        sys.exit(f"no ability records under {args.repo}/assets/data/en")
+        sys.exit(f"no {args.records} records under {args.repo}/assets/data/en")
     if args.only or args.reroll:
         targets = (args.only or args.reroll).split(",")
         unknown = [key for key in targets if key not in every]
@@ -306,6 +331,7 @@ def main() -> None:
         targets = targets[::-1]
 
     build = Build(args)
+    build.pictures = {key: record.picture for key, record in every.items() if record.picture}
     if args.reroll:
         # A new attempt number changes the cache key, so the next render replaces it;
         # the old picture is overwritten, not kept.
@@ -355,10 +381,11 @@ def main() -> None:
     present = {p.stem for p in build.icons.glob("*.png")}
     missing = sorted(set(every) - present)
     orphans = sorted(present - set(every))
-    unconceived = sorted(set(every) - CONCEPTS.keys())
-    print(f"Concepts: {len(every) - len(unconceived)}/{len(every)} abilities have one "
+    needed = {record.picture or key for key, record in every.items()}
+    unconceived = sorted(needed - CONCEPTS.keys())
+    print(f"Concepts: {len(needed) - len(unconceived)}/{len(needed)} pictures have one "
           f"(the rest fall back to their own name and description)")
-    for key in sorted(CONCEPTS.keys() - set(every)):
+    for key in sorted(CONCEPTS.keys() - needed):
         print(f"  concept for a key no longer in the data: {key}")
     print(f"Coverage: {len(present & set(every))}/{len(every)} abilities have an icon; "
           f"{len(missing)} missing, {len(orphans)} orphaned (key no longer in the data)")

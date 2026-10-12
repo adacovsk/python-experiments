@@ -15,25 +15,25 @@ import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import abilities as ability_data
 import gallery
+from build import CONCEPT_FILES, load_records
 
 HERE = Path(__file__).resolve().parent
 
 
 class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, out: Path, every: dict, backend: str, **kwargs):
-        self.out, self.every, self.backend = out, every, backend
+    def __init__(self, *args, out: Path, every: dict, backend: str, concept_file: Path, **kwargs):
+        self.out, self.every, self.backend, self.concept_file = out, every, backend, concept_file
         super().__init__(*args, directory=str(out), **kwargs)
 
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0]
         if path in ("/", "/gallery.html"):
-            concepts = json.loads((HERE / "concepts.json").read_text())
+            concepts = self.concepts()
             gallery.write(self.out / "gallery.html", self.out / "icons" / "128", self.every, concepts, self.backend)
             self.path = "/gallery.html"
         elif path == "/gallery.json":
-            concepts = json.loads((HERE / "concepts.json").read_text())
+            concepts = self.concepts()
             body = json.dumps(gallery.entries(self.out / "icons" / "128", self.out, self.every, concepts)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -43,6 +43,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         super().do_GET()
+
+    def concepts(self) -> dict[str, str]:
+        return json.loads(self.concept_file.read_text()) if self.concept_file.exists() else {}
 
     def do_POST(self) -> None:
         """Flag or un-flag an icon for regeneration: an empty file per key in queue/."""
@@ -75,14 +78,16 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--set", default="main", help="which output set to serve")
+    parser.add_argument("--records", choices=tuple(CONCEPT_FILES), default="abilities")
+    parser.add_argument("--set", help="which output set to serve (default: main for abilities, else the records name)")
     parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    out = HERE / "output" / args.set
-    every = ability_data.load(args.repo)
+    out = HERE / "output" / (args.set or ("main" if args.records == "abilities" else args.records))
+    every = load_records(args.records, args.repo)
     # The reroll command the page builds names a backend; Cloudflare is the fast one.
-    handler = functools.partial(Handler, out=out, every=every, backend="cloudflare")
+    handler = functools.partial(Handler, out=out, every=every, backend="cloudflare",
+                                concept_file=HERE / CONCEPT_FILES[args.records])
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     print(f"Live gallery: http://127.0.0.1:{args.port}/gallery.html  (Ctrl+C to stop)", flush=True)
     server.serve_forever()
