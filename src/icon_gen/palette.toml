@@ -120,6 +120,9 @@ ramp = [[25, 17, 25], [85, 63, 85], [199, 169, 199], [216, 193, 216], [237, 220,
 [ability_type.Creature]
 words = "black, rust red and bone"
 ramp = [[16, 11, 10], [79, 46, 40], [173, 119, 112], [207, 176, 161], [234, 221, 207]]
+[ability_type.Condition]
+words = "ash grey, faded bone and dim violet"
+ramp = [[18, 16, 22], [62, 58, 70], [140, 132, 150], [195, 188, 200], [238, 234, 240]]
 [ability_type.Effect]
 words = "dark sage, sage green and pale mint"
 ramp = [[16, 21, 16], [69, 83, 69], [167, 182, 167], [198, 212, 198], [224, 236, 224]]
@@ -136,3 +139,10 @@ Origin = "hexagon"
 Archetype = "shield"
 Creature = "star"
 Effect = "square"
+Condition = "pentagon"
+
+# Conditions carry no mechanics to read harm or help from, so their side is stated
+# here; a condition not listed is harmful. "neutral" takes the Condition palette.
+[condition_side]
+beneficial = ["concealed", "hidden", "invisible", "undetected", "unnoticed", "quickened"]
+neutral = ["observed"]

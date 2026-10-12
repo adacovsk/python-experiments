@@ -32,6 +32,11 @@ class Ability:
     damage_type: str | None  # the first damage type any mechanic deals
     actions: str  # "1", "2", "3", "reaction", "free", "passive", "long" (an activity or a cast time)
     area: str | None  # "Burst", "Cone", "Line", "Ring"
+    # A side stated outright, for records with no mechanics to read it from (conditions).
+    stated_side: str | None = None
+    # Records that share one picture (an effect's buff and debuff) name it here; the
+    # palette, applied when composing, is what tells them apart.
+    picture: str | None = None
 
     @property
     def tradition(self) -> str | None:
@@ -40,6 +45,8 @@ class Ability:
     @property
     def side(self) -> str | None:
         """Whether the first mechanic with a side harms, heals or helps."""
+        if self.stated_side:
+            return self.stated_side
         for kind in self.mechanics:
             if kind in HARMFUL:
                 return "harmful"
@@ -107,3 +114,58 @@ def load(repo: Path) -> dict[str, Ability]:
                 area=area,
             )
     return abilities
+
+
+def load_conditions(repo: Path, sides: dict[str, list[str]]) -> dict[str, Ability]:
+    """Every condition in `repo/assets/data/en/conditions.json`, as records the same
+    pipeline renders. A condition has no mechanics to read harm or help from, so its
+    side comes from `sides` (palette.toml's `[condition_side]`); anything it does not
+    list is harmful, which is most of them."""
+    data = json.loads((repo / "assets" / "data" / "en" / "conditions.json").read_text())
+    side_of = {key: side for side, keys in sides.items() for key in keys}
+    return {
+        key: Ability(
+            key=key, name=entry.get("name", key), description="", kind="Condition",
+            traits=(), mechanics=(), damage_type=None, actions="passive", area=None,
+            stated_side=side_of.get(key, "harmful"),
+        )
+        for key, entry in data["indicators"].items()
+    }
+
+
+def load_effects(repo: Path, conditions: set[str]) -> dict[str, Ability]:
+    """Every stat or state a `Buff` or `Debuff` mechanic applies that is not itself a
+    condition (those have their own set): `armor_class`, `speed`, `fast_healing`...
+
+    One record per direction the data actually uses, `<key>_buff` and `<key>_debuff`,
+    each sided by its mechanic kind, so +AC and -AC share a picture but not a palette.
+    The description lists the abilities that apply it, as context for its concept.
+    """
+    used: dict[tuple[str, str], list[str]] = {}
+    for path in sorted((repo / "assets" / "data" / "en").rglob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        records = data.get("abilities") if isinstance(data, dict) else None
+        if not isinstance(records, dict):
+            continue
+        for record in records.values():
+            for kind, body in (_mechanic(entry) for entry in record.get("mechanics", [])):
+                if kind not in ("Buff", "Debuff") or not isinstance(body.get("effect_type"), str):
+                    continue
+                base, _, suffix = body["effect_type"].rpartition("_")
+                key = base if suffix.isdigit() and base else body["effect_type"]
+                if key in conditions or key.replace("_", "-") in conditions:
+                    continue
+                used.setdefault((key, kind), []).append(record.get("name", ""))
+    return {
+        f"{key}_{kind.lower()}": Ability(
+            key=f"{key}_{kind.lower()}",
+            name=f"{key.replace('_', ' ').capitalize()} {'up' if kind == 'Buff' else 'down'}",
+            description="Applied by: " + ", ".join(sorted(set(names))[:6]),
+            kind="Effect", traits=(), mechanics=(kind,), damage_type=None,
+            actions="passive", area=None, picture=key,
+        )
+        for (key, kind), names in sorted(used.items())
+    }
