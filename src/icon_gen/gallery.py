@@ -31,8 +31,9 @@ button { padding:6px 10px; background:#333; color:var(--text); border:1px solid 
 #cmd { width:100%; box-sizing:border-box; margin-top:8px; padding:6px 8px; background:#0c0c10; color:var(--pick);
        border:1px solid #444; border-radius:6px; font:12px ui-monospace, monospace; }
 #live { font-size:12px; color:var(--muted); }
-section { padding:8px 16px; }
-section h2 { font-size:14px; color:var(--muted); margin:16px 0 8px; }
+details { padding:4px 16px; }
+summary { font-size:14px; color:var(--muted); margin:12px 0 8px; cursor:pointer; user-select:none; }
+summary:hover { color:var(--text); }
 .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:10px; }
 figure { margin:0; background:var(--card); border:2px solid transparent; border-radius:8px; padding:6px; cursor:pointer; }
 figure.picked { border-color:var(--pick); }
@@ -54,6 +55,8 @@ figcaption span { color:var(--muted); }
     <input type="search" id="q" placeholder="Filter by key, name or concept">
     <button id="copy">Copy reroll command</button>
     <button id="clear">Clear selection</button>
+    <button id="fold">Collapse all</button>
+    <button id="unfold">Expand all</button>
     <span id="n">0 selected</span>
     <span id="live"></span>
   </div>
@@ -64,6 +67,11 @@ figcaption span { color:var(--muted); }
 const SNAPSHOT = __DATA__;
 const BACKEND = __BACKEND__, REPO = __REPO__;
 const picked = new Set(), seen = new Map();
+// Collapsed sections survive live re-renders and reloads; storage can be unavailable
+// (private windows), in which case they simply start expanded.
+let collapsed = new Set();
+try { collapsed = new Set(JSON.parse(localStorage.getItem('icon-gallery-collapsed') || '[]')); } catch {}
+const remember = () => { try { localStorage.setItem('icon-gallery-collapsed', JSON.stringify([...collapsed])); } catch {} };
 const LIVE = location.protocol.startsWith('http');
 let first = true;
 const $ = id => document.getElementById(id);
@@ -86,7 +94,7 @@ function card(e) {
       const queued = !f.classList.contains('queued');
       f.classList.toggle('queued', queued);
       await fetch('queue', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({key: e.key, queued})});
+                            body: JSON.stringify({set: e.set, key: e.key, queued})});
     });
   } else {
     if (picked.has(e.key)) f.classList.add('picked');
@@ -99,17 +107,23 @@ function card(e) {
 }
 
 function render(entries) {
-  const groups = new Map();
+  const groups = new Map(), order = new Map();
   for (const e of entries) {
-    if (!groups.has(e.kind)) groups.set(e.kind, []);
+    if (!groups.has(e.kind)) { groups.set(e.kind, []); order.set(e.kind, e.section); }
     groups.get(e.kind).push(e);
   }
   const main = $('main');
   main.replaceChildren();
-  for (const kind of [...groups.keys()].sort()) {
-    const s = document.createElement('section');
-    s.innerHTML = `<h2></h2><div class="grid"></div>`;
-    s.querySelector('h2').textContent = `${kind} · ${groups.get(kind).length}`;
+  // Abilities by type first, then the other sets, each as its own section.
+  const kinds = [...groups.keys()].sort((a, b) => (order.get(a) - order.get(b)) || a.localeCompare(b));
+  for (const kind of kinds) {
+    const s = document.createElement('details');
+    s.open = !collapsed.has(kind);
+    s.innerHTML = `<summary></summary><div class="grid"></div>`;
+    const queued = groups.get(kind).filter(e => e.queue).length;
+    s.querySelector('summary').textContent =
+      `${kind} · ${groups.get(kind).length}${queued ? ` · ${queued} flagged` : ''}`;
+    s.addEventListener('toggle', () => { s.open ? collapsed.delete(kind) : collapsed.add(kind); remember(); });
     const grid = s.querySelector('.grid');
     for (const e of groups.get(kind)) {
       const f = card(e);
@@ -135,6 +149,8 @@ function filter() {
   document.querySelectorAll('figure').forEach(f => f.style.display = f.dataset.text.includes(q) ? '' : 'none');
 }
 $('q').oninput = filter;
+$('fold').onclick = () => document.querySelectorAll('details').forEach(d => d.open = false);
+$('unfold').onclick = () => document.querySelectorAll('details').forEach(d => d.open = true);
 $('copy').onclick = () => { $('cmd').select(); navigator.clipboard?.writeText($('cmd').value); };
 $('clear').onclick = () => { picked.clear(); document.querySelectorAll('figure.picked').forEach(f => f.classList.remove('picked')); refresh(); };
 
@@ -168,8 +184,12 @@ def queue_state(icons_dir: Path, key: str) -> str:
     return "rendering" if any(queue.glob(f"{key}.*")) else ""
 
 
-def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts: dict[str, str]) -> list[dict]:
-    """Every icon on disk whose key is still an ability, as the page renders them."""
+def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts: dict[str, str],
+            set_name: str = "", section: int = 0, heading: str | None = None) -> list[dict]:
+    """Every icon on disk whose key is still a record, as the page renders them.
+
+    `heading` groups the whole set under one title (Conditions); without it each
+    record's own type is its group (Spell, Class...). `section` orders the sets."""
     found = []
     # "*.png" alone would also match a half-written "<key>.<pid>.part"-style temp file
     # only if it ended in .png; the stem check keeps any dotted name out regardless.
@@ -182,8 +202,10 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
         found.append({
             "key": path.stem,
             "name": ability.name,
-            "kind": ability.kind,
-            "concept": concepts.get(path.stem, ""),
+            "kind": heading or ability.kind,
+            "set": set_name,
+            "section": section,
+            "concept": concepts.get(ability.picture or path.stem, ""),
             "src": path.relative_to(base).as_posix(),
             # Changes when an icon is re-rolled, so the page reloads that one image.
             "mtime": int(path.stat().st_mtime),
@@ -193,7 +215,11 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
 
 
 def write(dest: Path, icons_dir: Path, abilities: dict[str, Ability], concepts: dict[str, str], backend: str) -> Path:
-    data = entries(icons_dir, dest.parent, abilities, concepts)
+    """A static snapshot of one set (written by builds next to its icons)."""
+    return write_page(dest, entries(icons_dir, dest.parent, abilities, concepts, dest.parent.name), backend)
+
+
+def write_page(dest: Path, data: list[dict], backend: str) -> Path:
     flag = "--backend cloudflare " if backend == "cloudflare" else ""
     page = (PAGE
             # "</" cannot appear inside the inline script, or a concept could end it early.
