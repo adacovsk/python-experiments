@@ -37,6 +37,12 @@ class Ability:
     # Records that share one picture (an effect's buff and debuff) name it here; the
     # palette, applied when composing, is what tells them apart.
     picture: str | None = None
+    # A subject already written out in full (a portrait's, assembled from its parts'
+    # concepts), used as is instead of a concept or the description.
+    subject: str | None = None
+    # The concept parts a portrait's subject is assembled from, as (part, key) pairs
+    # (`("ancestry", "dwarf")`), so the gallery can edit the lines it is built from.
+    parts: tuple[tuple[str, str], ...] = ()
 
     @property
     def tradition(self) -> str | None:
@@ -62,6 +68,8 @@ class Ability:
         Numbers are dropped: "20-foot radius" and "+1 circumstance bonus" are rules,
         not imagery, and an image model renders digits as stray glyphs.
         """
+        if self.subject:
+            return self.subject
         first = re.split(r"(?<=[.;:])\s", self.description.strip(), maxsplit=1)[0]
         # The clause before the first comma is the image; what follows is usually the
         # rules ("dealing 6d6 fire damage with a basic Reflex save").
