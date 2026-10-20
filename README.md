@@ -27,20 +27,23 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 - RealESRGAN_x4plus.pth - 4x super-resolution enhancement
 
 ### 🎨 [icon_gen/](src/icon_gen/)
-An icon for every ability in a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, rendered locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and composed from each record's own data:
-- **Glyph** - an AI render of a light emblem on black, prompted from the ability's name and description
-- **Compose** - frame shape by ability type, glyph tinted by damage type / harm-heal-help / tradition, vector badges for action cost and area shape (`palette.toml`)
-- **Uniqueness** - icons too alike in shape *and* colour get the later key's glyph re-rolled
-- **Coverage** - reports abilities without an icon and icons whose key no longer exists
+Icons and portraits for a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, painted by FLUX.1 [schnell] (locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), or on Cloudflare Workers AI's free daily allowance) in an antique-engraving style, from written concepts:
+- **Icons** — abilities (`concepts.json`), conditions and buff/debuff effects: the picture is gradient-mapped onto a palette (`palette.toml`: damage type, harm/heal/help, tradition, type) and framed by type with action-cost and area badges, at 128px
+- **Portraits** — players (ancestry × class × sex) and NPCs (role × ancestry), subjects assembled from per-part concepts (`concepts_portraits.json`), and monsters (`concepts_monsters.json`), in their own colours, at 256px
+- **Uniqueness** — look-alike icons are listed (and optionally re-rolled)
+- **Coverage** — records without an image or a concept, and images whose key no longer exists
 
 ```bash
-pixi run icons-setup                 # pinned sd binaries + weights (~15 GB, gitignored)
-pixi run icons --sample 20           # a spread across ability types, for review
-pixi run icons --only fireball,heal  # specific keys
-pixi run icons --all                 # everything; resumable, glyphs are cached
-pixi run icons --report              # coverage and collisions only
+pixi run icons-setup                     # pinned sd binaries + weights (~15 GB, gitignored)
+pixi run icons --sample 20               # a spread across ability types, for review
+pixi run icons --only fireball,heal      # specific keys
+pixi run icons --all                     # everything; resumable, pictures are cached
+pixi run icons --report                  # coverage and collisions only
+pixi run icons --records players --all   # conditions | effects | players | npcs | monsters
+pixi run icons-gallery                   # live review page: click to regenerate, ✓ to approve, ✎ to edit the prompt
+pixi run icons-cloud                     # Cloudflare worker that rides the daily allowance
 ```
-Options: `--model turbo|flux`, `--icon-size` (default 128: sharp up to 250% UI scale), `--export <dir>`.
+Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--watch`, `--icon-size`, `--export <dir>`. `systemd/` has user units for the local worker, the cloud worker and the gallery. Cloudflare needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment.
 
 **Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · TAESD/TAEF1 decoders
 

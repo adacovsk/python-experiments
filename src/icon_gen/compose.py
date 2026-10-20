@@ -1,4 +1,5 @@
-"""Compose a finished icon from a greyscale glyph render and the ability's own data.
+"""Compose a finished icon from a greyscale glyph render and the ability's own data
+(and a portrait from its render alone: `compose_portrait`).
 
 Layers, back to front:
 - **frame** — a shape per ability type (`[frame]` in palette.toml), dark fill, metal rim;
@@ -20,7 +21,7 @@ import tomllib
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from abilities import Ability
 
@@ -225,17 +226,56 @@ def compose(ability: Ability, render_png: bytes, export_size: int) -> Image.Imag
     clipped.paste(layer, mask=Image.fromarray(np.minimum(np.asarray(layer)[..., 3], np.asarray(mask)), "L"))
     canvas = Image.alpha_composite(canvas, clipped)
 
-    # Rim: the frame outline, then an inner band in the ability's colour — with the
-    # glow behind the picture, this is where the type coding lives.
+    # With the glow behind the picture, the rim's inner band is where the type coding lives.
+    canvas = Image.alpha_composite(canvas, rim(shape, size, inset, colour))
+
+    draw_badges(canvas, ability)
+    return canvas.resize((export_size, export_size), Image.Resampling.LANCZOS)
+
+
+def rim(shape: str, size: int, inset: float, colour: tuple[int, int, int]) -> Image.Image:
+    """The frame outline in metal, then an inner band in `colour`."""
     rim_width = max(4, size // 40)
     outline = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    edge = np.asarray(mask, dtype=np.int16)
+    edge = np.asarray(frame_mask(shape, size, inset), dtype=np.int16)
     inner = np.asarray(frame_mask(shape, size, inset + rim_width), dtype=np.int16)
     ring = np.clip(edge - inner, 0, 255).astype(np.uint8)
     outline.paste(Image.new("RGBA", (size, size), RIM), mask=Image.fromarray(ring, "L"))
     inner_ring = np.clip(inner - np.asarray(frame_mask(shape, size, inset + rim_width * 2), dtype=np.int16), 0, 255)
     outline.paste(Image.new("RGBA", (size, size), (*colour, 230)), mask=Image.fromarray(inner_ring.astype(np.uint8), "L"))
-    canvas = Image.alpha_composite(canvas, outline)
+    return outline
 
-    draw_badges(canvas, ability)
+
+# Tarnished gold, the accent the style prompt asks for.
+PORTRAIT_RIM = (160, 137, 79)
+# One warm sepia-to-bone grade over every portrait, lightly: it puts each render in the
+# icons' tonal key whatever palette the model chose. Past about 0.3 it washes out the
+# skin colours that tell ancestries apart.
+PORTRAIT_GRADE = [[14, 11, 10], [66, 52, 40], [146, 120, 84], [206, 186, 140], [238, 228, 205]]
+PORTRAIT_GRADE_BLEND = 0.25
+
+
+def compose_portrait(render_png: bytes, export_size: int) -> Image.Image:
+    """A portrait: the render in its own colours under a light shared grade, centre-cropped
+    square, its edges darkened into the frame, inside a rounded frame with the icons' rim.
+
+    No full gradient map, unlike an icon: a face mapped onto a five-stop ramp goes flat and
+    waxy, and a portrait carries no palette coding to show. No crop to the subject
+    either: a bust already fills the render, and cropping to its extent would cut the
+    shoulders unevenly. The vignette does what the icons' edge fade does, hiding any
+    border the model drew, since the negative prompt is inert at these settings.
+    """
+    size = export_size * 4
+    inset = size * 0.02
+    mask = frame_mask("rounded", size, inset)
+    with Image.open(io.BytesIO(render_png)) as image:
+        picture = ImageOps.fit(image.convert("RGB"), (size, size), Image.Resampling.LANCZOS)
+    rgb = gradient_map(np.asarray(picture, dtype=np.float32), PORTRAIT_GRADE, PORTRAIT_GRADE_BLEND)
+    yy, xx = np.mgrid[0:size, 0:size]
+    radius = np.hypot(xx - size / 2, yy - size / 2) / (size / 2)
+    keep = np.clip((1.2 - radius) / 0.45, 0.0, 1.0)[..., None]
+    rgb = rgb * keep + np.asarray(BACKGROUND[:3], dtype=np.float32) * (1.0 - keep)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(Image.fromarray(rgb.astype(np.uint8), "RGB"), mask=mask)
+    canvas = Image.alpha_composite(canvas, rim("rounded", size, inset, PORTRAIT_RIM))
     return canvas.resize((export_size, export_size), Image.Resampling.LANCZOS)

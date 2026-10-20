@@ -1,0 +1,100 @@
+{
+ "ancestry": {
+  "changeling": "outwardly human, with mismatched eyes of two different colours",
+  "duskwalker": "outwardly human, with a solemn, quietly watchful face",
+  "dwarf": "short and stocky with a broad sturdy frame and a strong weathered face",
+  "elf": "tall and slender with long pointed ears and fine, ageless features",
+  "gnome": "very small, with large expressive eyes, pointed ears and vividly coloured hair",
+  "goblin": "small and wiry, with a large head, big pointed ears, a wide mouth of sharp teeth and green or grey skin",
+  "halfling": "a small adult about half a human's height, with a round face, curly hair and quick bright eyes",
+  "hobgoblin": "human-sized, with broad shoulders and long powerful arms, a bald wide head, small beady eyes and grey skin weathered to a steely blue",
+  "human": "an ordinary human face, weathered and memorable, with a strongly individual nose, jaw and brow",
+  "kobold": "a small upright reptilian person covered in scales, with a long snout and slit-pupilled eyes",
+  "leshy": "a small plant spirit with a body of wood and bark, and leaves, flowers or fungus for hair",
+  "nephilim": "human-like with a faintly otherworldly cast, such as golden eyes or small horns",
+  "orc": "big and powerfully built, with green or grey skin and prominent lower tusks",
+  "ratfolk": "an upright rat-person with a furred rat head, a whiskered snout, round ears and dark eyes"
+ },
+ "ancestry_sex": {
+  "dwarf_female": "a woman with a smooth, beardless face and bare chin, long thick hair worn in braids",
+  "dwarf_male": "a long braided beard",
+  "gnome_male": "bushy sideburns"
+ },
+ "class": {
+  "alchemist": "wearing a stained leather apron over rolled sleeves, brass goggles pushed up on the forehead, a bandolier of glowing glass vials across the chest",
+  "barbarian": "bare-shouldered under a heavy fur mantle, war paint across the face, a great axe haft over one shoulder, a fierce stare",
+  "bard": "in a slashed doublet with a high collar, a feathered cap, a lute neck rising over one shoulder, a knowing half-smile",
+  "champion": "in polished plate armour with a holy symbol embossed on the breastplate, a tabard over it, a longsword hilt at the shoulder, a resolute gaze",
+  "cleric": "in a vestment over a mail shirt, a holy sun symbol hanging on a chain at the chest, a mace held upright, a serene stern face",
+  "druid": "in a rough hooded cloak of hide and leaves, a staff wound with ivy",
+  "fighter": "in a chain mail coif and hauberk, a longsword held upright before the face, a scarred and steady expression",
+  "investigator": "in a long coat with a turned-up collar, a magnifying lens on a cord, a rapier hilt at the hip and a sharp appraising look",
+  "monk": "in simple wrapped robes with bare forearms bound in cloth, a shaved or tightly bound head, hands raised in a calm fighting stance",
+  "oracle": "in layered veils and ragged robes, eyes faintly glowing, a strange cursed mark spreading across one cheek, small bones and charms on cords",
+  "ranger": "in a green hooded cloak over leather, a longbow over the shoulder and arrow fletchings behind, a weathered watchful face",
+  "rogue": "in dark studded leather with a deep hood, a dagger held close, half the face in shadow, a sly sidelong glance",
+  "sorcerer": "in rich robes with arcane embroidery, faint coloured light crackling around the fingers and in the eyes, an intense proud expression",
+  "swashbuckler": "in an open-collared shirt and a fine embroidered coat, a wide-brimmed hat with a plume, a rapier raised in salute, a cocky grin",
+  "witch": "in a dark shawl and a pointed wide hat, a familiar black cat curled at the shoulder, herb bundles and charms hanging at the neck",
+  "wizard": "in long scholar's robes and a tall hood, an old leather spellbook clasped to the chest, a gnarled staff with a crystal at its head"
+ },
+ "role": {
+  "archmage": "an ancient archmage in robes heavy with silver embroidery, a crown of floating glowing runes, a tall staff topped with a burning crystal",
+  "battle_priest": "a battle priest in a breastplate under a temple tabard, a warhammer on the shoulder, a holy symbol hanging from the neck",
+  "brigand": "a brigand in patched leather, a rough scarf around the neck, a spear over the shoulder, unshaven and hard-eyed",
+  "champion_errant": "a wandering champion in battered plate, a torn travelling cloak, a greatsword hilt over the shoulder, a weary noble face",
+  "cleric": "a village priest in plain vestments over a mail shirt, a holy symbol on a cord, a mace at the side and a kind tired face",
+  "commoner": "a commoner in a plain homespun tunic and a woollen cap, an honest weathered face",
+  "corpse_binder": "a pallid scholar in grave-dust robes, a bone-handled staff, a ring of old iron keys and candles burning low around the shoulders",
+  "court_wizard": "a court wizard in fine embroidered robes with a high collar, a jewelled chain of office, a slim staff and a cool calculating look",
+  "crown_champion": "the crown's champion in gilded plate armour, a royal tabard, a greatsword held upright before the face",
+  "deathspeaker": "a hooded mourner-sage behind a veil of grey gauze, a lantern of cold blue flame held up, hollow grave eyes",
+  "grand_magister": "a grand magister in layered ceremonial robes and a tall stiff mitre, an ornate staff, constellations embroidered across the shoulders",
+  "grandmaster": "a martial grandmaster in simple robes, a long staff held across the shoulders, a serene ageless face",
+  "guard": "a town guard in a chain shirt and a steel cap, a city tabard, a crossbow over the shoulder",
+  "guard_captain": "a guard captain in a polished breastplate with a captain's sash, a plumed helm under one arm, a stern authoritative look",
+  "guild_master": "a guild master in a rich velvet coat with a heavy chain of office and rings on every finger, a shrewd smile",
+  "hierophant": "a hierophant in ornate plate armour under flowing high-temple vestments, a tall mitre and a great holy symbol blazing on the chest",
+  "high_marshal": "a high marshal in black-enamelled plate with a fur-trimmed cloak, a marshal's baton, a commanding gaze",
+  "high_priest": "a high priest in sumptuous vestments over a breastplate, a jewelled holy symbol, a tall headdress",
+  "innkeeper": "an innkeeper with a stained apron over the shirt, sleeves rolled, a tankard and a rag in hand, a broad welcoming grin",
+  "knight": "a knight in full plate with a visored helm pushed up, a heraldic surcoat, a lance pennant behind the shoulder",
+  "laborer": "a labourer with a sweat-stained shirt, a cloth tied around the brow, a heavy sack or tool over the shoulder",
+  "merchant": "a merchant in a good wool coat with a fur collar, a purse at the belt, a ledger tucked under one arm, a polite measuring look",
+  "militia": "a militia volunteer in a padded leather jerkin, a spear held upright, a nervous determined face",
+  "nightlord": "a lord of the criminal underworld in a black silk coat and a domino mask, a rapier hilt and a dagger, eyes glinting in shadow",
+  "noble": "a noble in silk and brocade with a lace collar, a rapier at the hip, a signet ring and a haughty expression",
+  "raider": "a raider in a chain shirt and furs, war paint on the face, a greatsword over the shoulder",
+  "scholar": "a scholar in ink-stained robes with spectacles, a stack of books held against the chest, a distracted gaze",
+  "scout": "a scout in a mottled hooded cloak, a shortbow over the shoulder, a sprig of fern tucked in the hood",
+  "sergeant": "a sergeant in a chain hauberk and a steel helm, a shield on the back, a gruff scarred face",
+  "shadow_broker": "a broker of secrets in a dark hooded coat, a sealed letter held between two fingers, half the face in shadow",
+  "sovereign": "a sovereign in a crown and an ermine-trimmed mantle over plate armour, a longsword held upright, a regal gaze",
+  "spymaster": "a spymaster in a plain dark doublet and a hood, a dagger and a folded letter, a face that gives nothing away",
+  "veteran": "a grizzled veteran soldier in a dented breastplate, a scarred face and a missing ear, a steel shield on the back",
+  "warlord": "a warlord in spiked black plate with a trophy-laden fur mantle, a greatsword over the shoulder, a cruel commanding stare",
+  "warrior": "a warrior in a chain shirt, a greatsword over the shoulder, a hard confident face",
+  "watch_commander": "a watch commander in full plate with a city tabard, a greatsword grounded before them, a lantern badge of office"
+ },
+ "variety": {
+  "age": [
+   "young",
+   "",
+   "middle-aged",
+   "old"
+  ],
+  "angle": [
+   "facing the viewer",
+   "in three-quarter view turned to the left",
+   "in three-quarter view turned to the right",
+   "head lowered, looking up from beneath the brow",
+   "glancing back over one shoulder"
+  ],
+  "light": [
+   "lit by a single hard shaft of light from high on the left",
+   "lit by a single hard shaft of light from high on the right",
+   "lit hard from the left, half the face in deep shadow",
+   "lit hard from the right, half the face in deep shadow"
+  ]
+ }
+}

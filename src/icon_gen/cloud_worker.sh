@@ -6,10 +6,14 @@
 cd "$(dirname "$0")/../.."
 source "$HOME/.profile"  # CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN
 while true; do
-    # The small sets first (each is a fraction of one day's allowance), then abilities;
-    # anything already rendered is cached, so later passes skip straight past them.
+    # The small sets first (each a fraction of one day's allowance), then portraits, then
+    # abilities, last because --watch keeps it running. Anything already rendered is
+    # cached, so later passes skip straight past it.
     python src/icon_gen/build.py --backend cloudflare --records conditions --all
     python src/icon_gen/build.py --backend cloudflare --records effects --all
+    python src/icon_gen/build.py --backend cloudflare --records players --all
+    python src/icon_gen/build.py --backend cloudflare --records npcs --all
+    python src/icon_gen/build.py --backend cloudflare --records monsters --all
     python src/icon_gen/build.py --backend cloudflare --all --watch
     echo "[$(date -u +%H:%M) UTC] allowance spent or run ended; retrying in 15 minutes"
     sleep 900
