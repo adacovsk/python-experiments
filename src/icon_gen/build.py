@@ -20,7 +20,7 @@ For each ability:
 4. **Coverage** — every ability key has an icon and a concept, and nothing is left for
    a deleted key.
 
-Outputs land in src/icon_gen/output/<set>/ (default `main`, shared by both backends): `glyphs/` (raw pictures),
+Outputs land in $ICON_GEN_OUT/<set>/ (default `main`, shared by both backends): `glyphs/` (raw pictures),
 `icons/<size>/` (finished icons, named by ability key), `manifest.json`, `sheet.png`
 (this run's batch), and `gallery.html` (every icon, labelled, click to build a
 `--reroll` command).
@@ -44,6 +44,7 @@ import abilities as ability_data
 import gallery
 import portraits
 from compose import PALETTE, compose, compose_portrait, palette
+from paths import OUTPUT, REPO
 from render import CloudflareRenderer, PromptRefused, QuotaExhausted, Renderer
 from unique import collisions, fingerprint
 
@@ -69,16 +70,19 @@ STYLE = ("an eldritch cosmic-horror illustration in the style of an antique engr
 # green or a nephilim's gold, the quickest tell of an ancestry, never came through: the
 # palette is scoped to clothing and metal, and skin is named as keeping its colour.
 # Otherwise the vocabulary is the icons' STYLE, so a portrait reads as the same hand:
-# etched engraving linework, tarnished gold. "Weathered" and "gaunt" keep the model off
-# the pretty anime and grinning cartoon faces a plain "portrait" drifts into.
+# etched engraving linework, tarnished gold. "Gaunt" and "grim" keep the model off the
+# pretty anime and grinning cartoon faces a plain "portrait" drifts into; "weathered"
+# did too, but aged nearly every character, so age is left to the `variety` list. These
+# describe the mood, not a face: "a stylised face with gaunt features" in every prompt
+# outvoted any ancestry without a human head, so a leshy came out a man with leaves.
 # No fixed pose either: the subject carries its own angle and light (portraits.Variety).
 PORTRAIT_STYLE = ("an eldritch dark-fantasy portrait in the style of an antique engraving and an occult "
                   "tarot card, fine etched ink linework with cross-hatched shading and subtle painterly "
-                  "texture, a weathered stylised face with gaunt, grim features, ominous and ancient, "
+                  "texture, gaunt and grim, ominous and ancient, "
                   "muted limited palette with tarnished gold accents on clothing and metal, skin, eyes "
                   "and hair keeping their own natural colours, one hard light from the side against deep "
                   "shadow, clearly an illustration rather than a photograph, the head and upper body "
-                  "filling the frame, the face clearly lit, on a plain black background")
+                  "filling the frame, the features clearly lit, on a plain black background")
 NEGATIVE = "text, letters, numbers, words, border, frame, photo, multiple objects, clutter, watermark"
 
 # Art direction, one per ability key: a single concrete image drawn from the record's
@@ -139,10 +143,15 @@ def write_atomically(path: Path, data: bytes) -> None:
 
 
 class Queue:
-    """Icons flagged for regeneration in the live gallery: one empty file per key in
-    `<set>/queue/`. A build claims a flag by renaming it to `<key>.<pid>` — atomic, so
-    when two builds fill the set at once exactly one repaints it — and deletes it once
-    the new picture is in, which is what clears the flag on the page."""
+    """Icons flagged in the live gallery: one file per key in `<set>/queue/`. A build
+    claims a flag by renaming it to `<key>.<pid>` — atomic, so when two builds fill the
+    set at once exactly one handles it — and deletes it once the new picture is in,
+    which is what clears the flag on the page.
+
+    An empty flag asks for a new picture. One holding JSON asks for something gentler:
+    `{"improve": "<instruction>"}` edits the current picture, `{"undo": true}` puts back
+    the picture from before the last edit, `{"revert": true}` the original, and
+    `{"previous": true}` the picture a repaint replaced."""
 
     def __init__(self, directory: Path):
         self.directory = directory
@@ -176,6 +185,15 @@ class Queue:
         """Put a claim back unfinished (allowance ran out), so the flag stays up."""
         os.rename(claimed, self.directory / key)
 
+    @staticmethod
+    def request(flag: Path) -> dict:
+        """What a flag asks for: {} for a new picture, else its JSON."""
+        try:
+            text = flag.read_text().strip()
+        except FileNotFoundError:
+            return {}
+        return json.loads(text) if text else {}
+
 
 class Build:
     def __init__(self, args: argparse.Namespace):
@@ -184,8 +202,9 @@ class Build:
         # picture from either is interchangeable, and both can fill the same set at once.
         self.out = args.out / args.set
         self.glyphs = self.out / "glyphs"
+        self.history = self.glyphs / "history"
         self.icons = self.out / "icons" / str(args.icon_size)
-        self.glyphs.mkdir(parents=True, exist_ok=True)
+        self.history.mkdir(parents=True, exist_ok=True)
         self.icons.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.out / "manifest.json"
         self.manifest: dict[str, dict] = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
@@ -250,12 +269,98 @@ class Build:
         prompt = f"{subject}{colours}, {PORTRAIT_STYLE if self.portrait else STYLE}"
         seed = seed_for(picture, attempt)
         path = self.glyphs / f"{picture}.png"
-        if path.exists() and entry.get("prompt") == prompt and entry.get("seed") == seed:
+        # An edited or restored picture was chosen by someone looking at it, so a changed
+        # concept or style does not repaint it — only a re-roll (a new seed) does. Otherwise
+        # an `--all` pass after a concept edit silently swaps out pictures already fixed up.
+        kept = entry.get("edits") or entry.get("restored")
+        if path.exists() and entry.get("seed") == seed and (kept or entry.get("prompt") == prompt):
             return path.read_bytes()
         png = self.renderer().render(prompt, NEGATIVE, seed)
+        if path.exists():
+            self.set_aside(picture, entry)
         write_atomically(path, png)
         self.record(picture, {"prompt": prompt, "seed": seed, "attempt": attempt})
         return png
+
+    def set_aside(self, picture: str, entry: dict) -> None:
+        """Move the current picture — with its manifest entry and, if edited, its whole
+        chain of steps — to `history/replaced/<picture>@<ns>/` rather than overwrite it,
+        so the gallery's "Previous picture" can put it back."""
+        dest = self.history / "replaced" / f"{picture}@{time.time_ns()}"
+        dest.mkdir(parents=True)
+        for step in self.history.glob(f"{picture}.*"):
+            os.replace(step, dest / step.name)
+        os.replace(self.glyphs / f"{picture}.png", dest / f"{picture}.png")
+        (dest / "entry.json").write_text(json.dumps(entry, indent=1, sort_keys=True) + "\n")
+
+    def previous(self, key: str, every: dict[str, ability_data.Ability]) -> bool:
+        """Swap in the picture most recently replaced, edits and all; the current one is
+        set aside in its place, so asking again swaps back. False when there is none."""
+        picture = every[key].picture or key
+        versions = gallery.replaced_versions(self.history).get(picture)
+        if not versions:
+            return False
+        source = self.history / "replaced" / f"{picture}@{max(versions)}"
+        entry = json.loads(self.manifest_path.read_text()).get(picture, {}) if self.manifest_path.exists() else {}
+        if (self.glyphs / f"{picture}.png").exists():
+            self.set_aside(picture, entry)
+        for step in source.glob(f"{picture}.*"):
+            os.replace(step, (self.glyphs if step.suffix == ".png" else self.history) / step.name)
+        restored = json.loads((source / "entry.json").read_text())
+        (source / "entry.json").unlink()
+        source.rmdir()
+        self.record(picture, {**restored, "restored": True})
+        for user in self.users(picture, every):
+            self.make(every[user], force=True)
+        return True
+
+    def restore(self, picture: str, step: int, entry: dict, every: dict[str, ability_data.Ability]) -> None:
+        """Put back the picture from before edit `step` (0 is the original) and recompose."""
+        write_atomically(self.glyphs / f"{picture}.png", (self.history / f"{picture}.{step}").read_bytes())
+        self.record(picture, {**entry, "edits": entry["edits"][:step]})
+        for user in self.users(picture, every):
+            self.make(every[user], force=True)
+
+    def users(self, picture: str, every: dict[str, ability_data.Ability]) -> list[str]:
+        """Every record drawn from this picture: one, or both sides of a shared effect."""
+        return [key for key, record in every.items() if (record.picture or key) == picture]
+
+    def improve(self, key: str, instruction: str, every: dict[str, ability_data.Ability]) -> None:
+        """Edit the current picture as `instruction` says, instead of painting a new one.
+
+        The picture keeps its manifest prompt and seed, so the cache goes on serving the
+        edited one; the instructions are listed under `edits`, and the picture each one
+        replaced is kept as `glyphs/history/<picture>.<step>` — `.0` the original — for
+        `undo` and `revert`. A later re-roll paints from scratch; the chain is then moved
+        to `history/replaced/`, where "Previous picture" can bring it back."""
+        record = every[key]
+        picture = record.picture or key
+        # Through the cache first: a picture never painted is painted before it is edited.
+        # A concept changed since does not repaint it — the edit is of the picture on screen.
+        base = self.glyph(record)
+        entry = self.manifest[picture]
+        edits = entry.get("edits", [])
+        with Image.open(io.BytesIO(base)) as image:
+            size = min(1024, max(256, image.width))
+        renderer = self.renderer()
+        edited = renderer.edit(base, instruction, seed_for(picture, entry.get("attempt", 0)) + len(edits) + 1, size)
+        write_atomically(self.history / f"{picture}.{len(edits)}", base)
+        write_atomically(self.glyphs / f"{picture}.png", edited)
+        self.record(picture, {**entry, "edits": [*edits, instruction]})
+        for user in self.users(picture, every):
+            self.make(every[user], force=True)
+
+    def undo(self, key: str, every: dict[str, ability_data.Ability], to_original: bool = False) -> bool:
+        """Put back the picture from before the last edit, or the original; False when the
+        picture has no edits. The step files stay: the next edit overwrites them in turn."""
+        picture = every[key].picture or key
+        entry = json.loads(self.manifest_path.read_text()).get(picture, {}) if self.manifest_path.exists() else {}
+        edits = entry.get("edits", [])
+        step = 0 if to_original else len(edits) - 1
+        if not edits or not (self.history / f"{picture}.{step}").exists():
+            return False
+        self.restore(picture, step, entry, every)
+        return True
 
     def record(self, key: str, entry: dict) -> None:
         """Save one key's manifest entry without losing anyone else's.
@@ -272,21 +377,39 @@ class Build:
         os.replace(temporary, self.manifest_path)
 
     def drain(self, every: dict[str, ability_data.Ability]) -> int:
-        """Repaint every icon flagged in the gallery, ahead of the run's own list."""
+        """Handle every icon flagged in the gallery, ahead of the run's own list."""
         self.refresh(every)
         done = 0
         for key in self.queue.flagged():
+            # Only Workers AI edits; the local server has no edit model loaded. Leaving the
+            # flag unclaimed keeps it for the Cloudflare build rather than failing it here.
+            if "improve" in Queue.request(self.queue.directory / key) and self.args.backend != "cloudflare":
+                continue
             if key not in every or (claimed := self.queue.claim(key)) is None:
                 continue
-            self.reroll(key)
+            request = Queue.request(claimed)
             try:
-                made = self.make(every[key])
+                if "improve" in request:
+                    self.improve(key, str(request["improve"]), every)
+                    outcome = f"improved: {request['improve']}"
+                elif request.get("previous"):
+                    outcome = "previous picture restored" if self.previous(key, every) else "no previous picture"
+                elif request.get("undo") or request.get("revert"):
+                    reverted = bool(request.get("revert"))
+                    done_what = "reverted to the original" if reverted else "last improvement undone"
+                    outcome = done_what if self.undo(key, every, reverted) else "no improvements to undo"
+                else:
+                    self.reroll(key)
+                    outcome = "regenerated" if self.make(every[key]) else "refused by the content filter"
             except QuotaExhausted:
                 self.queue.release(claimed, key)
                 raise
+            except PromptRefused:
+                self.refused.append(key)
+                outcome = "edit refused by the content filter"
             claimed.unlink(missing_ok=True)
             done += 1
-            print(f"  regenerated {key} (flagged in the gallery){'' if made else ', refused by the content filter'}", flush=True)
+            print(f"  {key} (flagged in the gallery): {outcome}", flush=True)
         return done
 
     def approved(self, key: str) -> bool:
@@ -295,10 +418,10 @@ class Build:
         mark = gallery.reviewed_marks(self.icons).get(key)
         return mark is not None and path.exists() and int(path.stat().st_mtime) == mark
 
-    def make(self, ability: ability_data.Ability) -> Path | None:
+    def make(self, ability: ability_data.Ability, force: bool = False) -> Path | None:
         # An approved icon is final: a later style or prompt change must not repaint it and
         # send it back to review. Only an explicit re-roll or gallery flag replaces it.
-        if ability.key not in self.bumped and self.approved(ability.key):
+        if not force and ability.key not in self.bumped and self.approved(ability.key):
             return self.icons / f"{ability.key}.png"
         try:
             picture = self.glyph(ability)
@@ -352,7 +475,7 @@ def sample(all_abilities: dict[str, ability_data.Ability], count: int) -> list[s
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
+    parser.add_argument("--repo", type=Path, default=REPO)
     parser.add_argument("--model", choices=("turbo", "flux"), default="turbo", help="local backend's model")
     parser.add_argument("--records", choices=tuple(CONCEPT_FILES), default="abilities",
                         help="what to make icons for: abilities, conditions, buff/debuff effects, "
@@ -377,8 +500,9 @@ def main() -> None:
                         help="automatic re-rolls of look-alike icons (default 0: just list them)")
     parser.add_argument("--max-bits", type=int, default=40, help="shape distance (of 256) at or below which icons collide")
     parser.add_argument("--max-colour", type=float, default=40.0, help="colour distance at or below which icons collide")
-    parser.add_argument("--export", type=Path, help="copy finished icons here, e.g. a bevy-rpg assets dir")
-    parser.add_argument("--out", type=Path, default=HERE / "output")
+    parser.add_argument("--export", type=Path, help="copy approved icons here, e.g. a bevy-rpg assets dir")
+    parser.add_argument("--export-size", type=int, help="size to export at, when the game wants a smaller one (ability icons: 64)")
+    parser.add_argument("--out", type=Path, default=OUTPUT)
     args = parser.parse_args()
     if not (args.only or args.sample or args.all or args.report or args.reroll or args.watch):
         parser.error("choose what to render: --only, --sample, --all, --reroll, --report or --watch")
@@ -410,7 +534,7 @@ def main() -> None:
     build.pictures = {key: record.picture for key, record in every.items() if record.picture}
     if args.reroll:
         # A new attempt number changes the cache key, so the next render replaces it;
-        # the old picture is overwritten, not kept.
+        # the old picture is set aside under history/replaced/, not overwritten.
         for key in targets:
             build.reroll(key)
     clashes: list[tuple[str, str, int, float]] = []
@@ -486,10 +610,23 @@ def main() -> None:
     page = gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
     print(f"Review gallery: {page}")
     if args.export:
+        # Only pictures approved in the gallery reach the game; a mark is the mtime of the
+        # picture that was looked at, so a re-render since then is held back until re-approved.
+        marks = gallery.reviewed_marks(build.icons)
+        approved = sorted(key for key in present & set(every)
+                          if marks.get(key) == int((build.icons / f"{key}.png").stat().st_mtime))
         args.export.mkdir(parents=True, exist_ok=True)
-        for key in sorted(present & set(every)):
-            shutil.copy2(build.icons / f"{key}.png", args.export / f"{key}.png")
-        print(f"Exported {len(present & set(every))} icons to {args.export}")
+        for key in approved:
+            src, dest = build.icons / f"{key}.png", args.export / f"{key}.png"
+            if args.export_size in (None, args.icon_size):
+                shutil.copy2(src, dest)
+            else:
+                # Downsampled from the approved picture rather than composed afresh at the
+                # export size: a separate composition would be a picture nobody reviewed.
+                with Image.open(src) as img:
+                    img.resize((args.export_size, args.export_size), Image.LANCZOS).save(dest, optimize=True)
+        print(f"Exported {len(approved)} approved icons to {args.export} "
+              f"({len(present & set(every)) - len(approved)} awaiting review)")
 
 
 if __name__ == "__main__":
