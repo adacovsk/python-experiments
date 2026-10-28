@@ -15,6 +15,16 @@ lines, and a new ancestry needs one line, not 60. A part with no concept falls b
 its record's own name. `ancestry_sex` (`dwarf_female`) adds a clause for one sex where
 the ancestry line alone pulls the model wrong.
 
+`ancestry_form` holds alternative bodies for an ancestry with more than one
+(`leshy_fungus`, `leshy_gourd`): each portrait takes one, picked per key. One line
+reading "leaves, flowers or fungus" let the model take the cheapest option every time
+— a human with a wreath — so each form is its own concrete line instead.
+
+`ancestry_dress` is how that people makes and wears things — materials, motifs, fit —
+and it restyles the class or role's kit. Without it the class line is the only thing
+describing clothes and gear, so every ancestry's alchemist wore the identical apron and
+goggles and only the face changed.
+
 Players and NPCs also take one age, head angle and light from the `variety` lists,
 picked per key: with one fixed framing every bust came out the same frontal,
 evenly-lit face, and the ancestry was the only thing left to tell them apart. Monsters share no parts, so each has its own line in
@@ -36,7 +46,19 @@ SEXES = ("male", "female")
 
 
 # Parts concepts_portraits.json holds; the gallery may edit any of them.
-PORTRAIT_PARTS = ("ancestry", "ancestry_sex", "class", "role")
+PORTRAIT_PARTS = ("ancestry", "ancestry_form", "ancestry_sex", "ancestry_dress", "class", "role")
+
+
+def _dress(parts: dict[str, dict[str, str]], a_key: str) -> str:
+    """The clause that restyles a class or role's kit in this ancestry's own make."""
+    line = parts["ancestry_dress"].get(a_key)
+    return f"their clothing and gear made in their own people's style, {line}" if line else ""
+
+
+def _form(parts: dict[str, dict[str, str]], key: str, a_key: str) -> str | None:
+    """The `ancestry_form` key this portrait takes, if its ancestry has any: stable per key."""
+    forms = sorted(k for k in parts["ancestry_form"] if k.startswith(f"{a_key}_"))
+    return forms[zlib.crc32(f"{key}:form".encode()) % len(forms)] if forms else None
 
 
 def _file() -> dict:
@@ -93,17 +115,27 @@ def load_players(repo: Path) -> dict[str, Ability]:
             for sex in SEXES:
                 key = f"{a_key}_{c_key}_{sex}"
                 extra = parts["ancestry_sex"].get(f"{a_key}_{sex}")
+                form = _form(parts, key, a_key)
                 records[key] = Ability(
                     key=key, name=f"{ancestry['name']} {cls['name']} ({sex})", description="",
                     kind=f"Players · {ancestry['name']}", traits=(), mechanics=(), damage_type=None,
                     actions="passive", area=None,
                     subject="; ".join(x for x in (
+                        # "a female leshy", not "a leshy woman": a noun outweighs the
+                        # ancestry, so "woman" painted every leshy as a human with a
+                        # wreath. Where the adjective loses to the ancestry's own pull
+                        # (beards on dwarf women), `ancestry_sex` says it outright.
                         f"{vary.who(key, sex, ancestry['name'].lower(), cls['name'].lower())}: "
                         f"{_look(parts['ancestry'], a_key, ancestry['name'].lower())}",
+                        parts["ancestry_form"].get(form, ""),
                         extra,
+                        # Dress before the kit: the earlier clause wins, and the kit's
+                        # "long robes" overrode a leshy's "barely any clothing".
+                        _dress(parts, a_key),
                         _look(parts["class"], c_key, cls["name"].lower()),
                         vary.framing(key)) if x),
-                    parts=(("ancestry", a_key), ("ancestry_sex", f"{a_key}_{sex}"), ("class", c_key)),
+                    parts=(("ancestry", a_key), *((("ancestry_form", form),) if form else ()),
+                           ("ancestry_sex", f"{a_key}_{sex}"), ("class", c_key), ("ancestry_dress", a_key)),
                 )
     return records
 
@@ -115,6 +147,7 @@ def load_npcs(repo: Path) -> dict[str, Ability]:
     for r_key, role in roles.items():
         for a_key, ancestry in ancestries.items():
             key = f"{r_key}_{a_key}"
+            form = _form(parts, key, a_key)
             records[key] = Ability(
                 key=key, name=f"{ancestry['name']} {role['name']}", description="",
                 kind=f"NPCs · {role['name']}", traits=(), mechanics=(), damage_type=None,
@@ -122,9 +155,12 @@ def load_npcs(repo: Path) -> dict[str, Ability]:
                 subject="; ".join(x for x in (
                     f"{vary.who(key, ancestry['name'].lower())}: "
                     f"{_look(parts['ancestry'], a_key, ancestry['name'].lower())}",
+                    parts["ancestry_form"].get(form, ""),
+                    _dress(parts, a_key),
                     _look(parts["role"], r_key, role["name"].lower()),
                     vary.framing(key)) if x),
-                parts=(("ancestry", a_key), ("role", r_key)),
+                parts=(("ancestry", a_key), *((("ancestry_form", form),) if form else ()),
+                       ("role", r_key), ("ancestry_dress", a_key)),
             )
     return records
 
