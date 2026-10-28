@@ -83,6 +83,18 @@ PORTRAIT_STYLE = ("an eldritch dark-fantasy portrait in the style of an antique 
                   "and hair keeping their own natural colours, one hard light from the side against deep "
                   "shadow, clearly an illustration rather than a photograph, the head and upper body "
                   "filling the frame, the features clearly lit, on a plain black background")
+# Monsters keep the portrait's hand but not its sitter. "Portrait", "upper body" and gold
+# "on clothing" describe a dressed bust, so every boar, shark and camel came out in the
+# same black robe with gold clasps. Any garb a monster really has is in its own concept
+# line; the style describes only a body, in its natural hide, and never names clothing,
+# which at these settings would draw it.
+MONSTER_STYLE = ("an eldritch dark-fantasy creature study in the style of an antique engraving and an "
+                 "occult tarot card, fine etched ink linework with cross-hatched shading and subtle "
+                 "painterly texture, ominous and ancient, muted limited palette with tarnished gold "
+                 "highlights, its natural hide, scales, fur, feathers or flesh keeping their own colours, "
+                 "one hard light from the side against deep shadow, clearly an illustration rather than "
+                 "a photograph, the creature's head and body filling the frame, clearly lit, on a plain "
+                 "black background")
 NEGATIVE = "text, letters, numbers, words, border, frame, photo, multiple objects, clutter, watermark"
 
 # Art direction, one per ability key: a single concrete image drawn from the record's
@@ -266,7 +278,8 @@ class Build:
         # take different palettes, so it is painted neutral and only recoloured.
         # A portrait is painted in its own colours and never recoloured.
         colours = "" if ability.picture or self.portrait else f", rendered in {palette(ability)['words']}"
-        prompt = f"{subject}{colours}, {PORTRAIT_STYLE if self.portrait else STYLE}"
+        style = MONSTER_STYLE if self.args.records == "monsters" else PORTRAIT_STYLE if self.portrait else STYLE
+        prompt = f"{subject}{colours}, {style}"
         seed = seed_for(picture, attempt)
         path = self.glyphs / f"{picture}.png"
         # An edited or restored picture was chosen by someone looking at it, so a changed

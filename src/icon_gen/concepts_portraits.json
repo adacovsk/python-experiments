@@ -9,11 +9,11 @@
   "halfling": "a grown adult's face with mature features, round and open, curly hair, slightly pointed ears and bright eyes",
   "hobgoblin": "a lean build with broad shoulders, a hairless head, pointed ears, narrow dark eyes and grey skin with a faint blue tint",
   "human": "an ordinary human face, memorable, with a strongly individual nose, jaw and brow",
-  "kobold": "a reptile head and scaled body, covered in fine scales of one colour such as red, blue, green, black, white or brass, with a lizard snout, slit-pupilled eyes and a smooth tapering skull like a small dragon's",
+  "kobold": "a small wiry draconic humanoid of a monstrous people, with a person's hunched posture and a cunning, wary expression: scaled skin of one colour such as red, blue, green, black, white or brass, a short blunt dragon-like snout, slit-pupilled eyes, a smooth tapering skull and clawed hands",
   "leshy": "a plant creature with a body of twisted roots and bark and dark knot-hole eyes",
   "nephilim": "a human face with one subtle otherworldly trait, such as golden eyes, two small horns, a few feathers in the hair or skin with a faint metallic sheen",
   "orc": "a strong broad-shouldered build, green or grey skin, a heavy brow, pointed ears, a square jaw and lower tusks",
-  "ratfolk": "a rat-person with a furred rat head, a whiskered snout, front incisors, round ears and dark eyes"
+  "ratfolk": "a gaunt ratlike humanoid of a monstrous people, with a person's hunched posture and a sharp, wary expression: mangy grey-brown fur, a narrow whiskered muzzle, long yellowed front incisors, ragged round ears and small dark eyes"
  },
  "ancestry_dress": {
   "changeling": "slightly mismatched clothes with small charms sewn on, knotted cords, a sprig of dried herbs and a small bone token on a string",
@@ -25,11 +25,11 @@
   "halfling": "practical homespun clothes: a wool waistcoat with brass buttons, neatly patched sleeves, a travelling cloak",
   "hobgoblin": "neat, uniform military gear: lacquered plates in tidy rows, crimson cords, close-fitting and well polished",
   "human": "plain well-worn travelling clothes and gear of ordinary make, scuffed from the road",
-  "kobold": "small scaled hide garments, bright stones and coins strung as a necklace, dragon-shaped symbols daubed in paint, a brass ring through the snout",
+  "kobold": "crude scavenged tribal gear: rough hide and scale wraps, bright stones and coins strung on cords, dragon-shaped symbols daubed in paint, a brass ring through the snout",
   "leshy": "very little clothing: a few woven grass and vine wraps, gear tied on with bark and leaf bindings, moss growing over any metal",
   "nephilim": "fine, plain garments with a small sun or flame motif embroidered at the collar",
   "orc": "hide and fur, rough-forged iron, bone and tusk ornaments, a few painted bands across the arms",
-  "ratfolk": "a patched coat with many pockets and pouches, bits of salvaged brass, a scarf wound loosely around the neck, a magnifying lens on a cord"
+  "ratfolk": "layered grimy rags and a frayed hooded cloak, many small pouches hung on cords, bits of salvaged brass and wire, a filthy scarf wound around the neck"
  },
  "ancestry_form": {
   "leshy_fungus": "a mushroom person: a broad speckled mushroom cap for a head, gills beneath its rim shading a pale fungal face, a few small toadstools sprouting on the shoulders",
