@@ -11,20 +11,27 @@ Runs at nice 19 — the machine is shared with other builds.
 
 **Cloudflare** — FLUX.1 [schnell] on Workers AI: the same model as the local FLUX,
 seconds per image instead of half an hour, within a free daily allowance. Needs
-CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment.
+CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment. It also edits an
+existing picture from an instruction (`edit`), with FLUX.2 [klein] 4B.
 """
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import socket
+import uuid
 import subprocess
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from PIL import Image
+
+from paths import OUTPUT
 
 ROOT = Path(__file__).resolve().parents[2]
 SD_SERVER = ROOT / "tools" / "sd" / "sd-server"
@@ -81,7 +88,7 @@ class Renderer:
         # stale server from an earlier run still holding it, and lose the request.
         self.port = port or free_port()
         self.url = f"http://127.0.0.1:{self.port}"
-        self.log = log or ROOT / "src" / "icon_gen" / "output" / "sd-server.log"
+        self.log = log or OUTPUT / "sd-server.log"
         self.process: subprocess.Popen | None = None
 
     def __enter__(self) -> "Renderer":
@@ -151,6 +158,12 @@ class CloudflareRenderer:
     """
 
     MODEL = "@cf/black-forest-labs/flux-1-schnell"
+    # Edits take the picture as a reference image plus an instruction. The 4B klein, not
+    # the 9B or FLUX.2 [dev]: it is the one of the three under Apache 2.0, like schnell,
+    # so an edited picture is as safe to ship as a fresh one.
+    EDIT_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+    # The endpoint rejects a reference image of 512 px or more on a side.
+    EDIT_INPUT = 496
 
     def __init__(self) -> None:
         try:
@@ -158,7 +171,9 @@ class CloudflareRenderer:
             self.token = os.environ["CLOUDFLARE_API_TOKEN"]
         except KeyError as missing:
             raise SystemExit(f"{missing.args[0]} is not set — see the icon_gen section of the README")
-        self.url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{self.MODEL}"
+        base = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run"
+        self.url = f"{base}/{self.MODEL}"
+        self.edit_url = f"{base}/{self.EDIT_MODEL}"
 
     def __enter__(self) -> "CloudflareRenderer":
         return self
@@ -168,10 +183,30 @@ class CloudflareRenderer:
 
     def render(self, prompt: str, negative: str, seed: int) -> bytes:
         body = json.dumps({"prompt": prompt[:2048], "steps": 4}).encode()
+        return self.run(self.url, body, "application/json")
+
+    def edit(self, picture: bytes, instruction: str, seed: int, size: int) -> bytes:
+        """`picture` changed as `instruction` says, the rest of it kept.
+
+        The model repaints the whole canvas either way; telling it what to keep is what
+        makes the result an edit of image 0 rather than a fresh picture on a theme.
+        """
+        with Image.open(io.BytesIO(picture)) as image:
+            reference = image.convert("RGB").resize((self.EDIT_INPUT, self.EDIT_INPUT), Image.Resampling.LANCZOS)
+        encoded = io.BytesIO()
+        reference.save(encoded, format="PNG")
+        prompt = (f"{instruction.rstrip('. ')}. Keep everything else in image 0 as it is: the same subject, "
+                  "composition, linework, style and colours, on the same plain black background.")
+        boundary = uuid.uuid4().hex
+        body = multipart(boundary, {"prompt": prompt[:2048], "width": str(size), "height": str(size), "seed": str(seed)},
+                         {"input_image_0": encoded.getvalue()})
+        return self.run(self.edit_url, body, f"multipart/form-data; boundary={boundary}")
+
+    def run(self, url: str, body: bytes, content_type: str) -> bytes:
         refusals = 0
         for attempt in range(8):
-            request = urllib.request.Request(self.url, data=body, headers={
-                "Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
+            request = urllib.request.Request(url, data=body, headers={
+                "Authorization": f"Bearer {self.token}", "Content-Type": content_type,
             })
             try:
                 with urllib.request.urlopen(request, timeout=120) as response:
@@ -205,3 +240,12 @@ class CloudflareRenderer:
             raise SystemExit(f"Workers AI returned an error: {data.get('errors')}")
         # A JPEG; the composer reads any format Pillow does.
         return base64.b64decode(data["result"]["image"])
+
+
+def multipart(boundary: str, fields: dict[str, str], files: dict[str, bytes]) -> bytes:
+    """A multipart/form-data body: the FLUX.2 endpoints take nothing else, even text-only."""
+    parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+             for name, value in fields.items()]
+    parts += [f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{name}.png"\r\n'
+              f'Content-Type: image/png\r\n\r\n'.encode() + data + b"\r\n" for name, data in files.items()]
+    return b"".join(parts) + f"--{boundary}--\r\n".encode()

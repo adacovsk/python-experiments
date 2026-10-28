@@ -42,11 +42,15 @@ summary:hover { color:var(--text); }
 .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:10px; }
 figure { margin:0; background:var(--card); border:2px solid transparent; border-radius:8px; padding:6px; cursor:pointer; }
 figure.picked { border-color:var(--pick); }
-figure.queued, figure.rendering { border-color:var(--pick); position:relative; }
-figure.queued::after, figure.rendering::after { position:absolute; top:10px; right:10px; padding:2px 6px; border-radius:4px;
-  background:var(--pick); color:#111; font-size:11px; font-weight:600; }
+figure.queued, figure.rendering, figure.edit-queued, figure.editing { border-color:var(--pick); position:relative; }
+figure.queued::after, figure.rendering::after, figure.edit-queued::after, figure.editing::after { position:absolute;
+  top:10px; right:10px; padding:2px 6px; border-radius:4px; background:var(--pick); color:#111; font-size:11px; font-weight:600; }
 figure.queued::after { content:"queued"; }
 figure.rendering::after { content:"regenerating…"; }
+figure.edit-queued::after { content:"edit queued"; }
+figure.editing::after { content:"editing…"; }
+figcaption i { color:var(--pick); font-style:normal; }
+dialog ol { margin:4px 0; padding-left:20px; color:var(--muted); font-size:12px; }
 figure.fresh { box-shadow:0 0 0 2px var(--new); }
 figure img { width:100%; aspect-ratio:1; display:block; }
 figcaption { font-size:11px; margin-top:4px; overflow-wrap:anywhere; }
@@ -90,9 +94,22 @@ dialog .note { color:var(--muted); font-size:12px; }
 <dialog id="edit"><form method="dialog">
   <img id="eimg" alt="">
   <h2 id="ename"></h2>
+  <div class="part">
+    <b>Improve this picture</b>
+    <p class="note">Say what to change ("make the flame blue", "remove the second hand"); the rest of the
+      picture is kept. Done by the Cloudflare build, so it waits for the daily allowance if that is spent.
+      Every earlier version is kept, so you can step back one edit or revert to the original.
+      "Previous picture" brings back the one a repaint replaced (edits and all), and asked again swaps back.</p>
+    <ol id="ehistory"></ol>
+    <textarea id="eimprove" placeholder="What to change"></textarea>
+    <div class="row"><button type="button" id="eimprove-go">Improve</button><button type="button" id="eundo">Undo last edit</button><button type="button" id="erevert">Revert to original</button><button type="button" id="eprevious">Previous picture</button></div>
+  </div>
+  <div class="part"><b>Prompt — repaints from scratch</b></div>
   <p class="note">Edits the concept line in the concept files. Leave a line empty to fall back to the
     record's own name and description. A concept shared by several records changes all of them;
-    the ones not regenerated now pick it up the next time a build reaches them.</p>
+    the ones not regenerated now pick it up the next time a build reaches them, except pictures that
+    were improved or brought back, which keep theirs until regenerated. Regenerating sets the old
+    picture aside under glyphs/history/replaced/; "Previous picture" brings it back.</p>
   <div id="eparts"></div>
   <div class="row" style="margin-top:12px"><button value="close">Close</button><span id="estatus" class="note"></span></div>
 </form></dialog>
@@ -123,11 +140,17 @@ function card(e) {
   f.querySelector('img').src = `${e.src}?v=${e.mtime}`;
   f.querySelector('b').textContent = e.name;
   f.querySelector('span').textContent = e.key;
+  if (e.edits.length) {
+    const mark = document.createElement('i');
+    mark.textContent = ` · ${e.edits.length} edit${e.edits.length > 1 ? 's' : ''}`;
+    mark.title = e.edits.join('\\n');
+    f.querySelector('span').after(mark);
+  }
   if (LIVE) {
     if (e.queue) f.classList.add(e.queue);
     const tools = document.createElement('div');
     tools.className = 'tools';
-    tools.innerHTML = `<button></button><button title="Edit this icon's prompt">✎</button>`;
+    tools.innerHTML = `<button></button><button title="Improve this picture, or edit its prompt">✎</button>`;
     const [ok, edit] = tools.querySelectorAll('button');
     ok.textContent = e.reviewed ? '↶' : '✓';
     ok.title = e.reviewed ? 'Send back to review' : 'Looks good: approve';
@@ -136,9 +159,11 @@ function card(e) {
     f.appendChild(tools);
     // Live: a click flags it for regeneration on disk; a running build repaints it and
     // the flag clears itself. Clicking a queued icon un-flags it.
+    // A waiting edit counts as flagged, so clicking it cancels the edit.
     f.addEventListener('click', async () => {
-      if (f.classList.contains('rendering')) return;
-      const queued = !f.classList.contains('queued');
+      if (f.classList.contains('rendering') || f.classList.contains('editing')) return;
+      const queued = !(f.classList.contains('queued') || f.classList.contains('edit-queued'));
+      f.classList.remove('edit-queued');
       f.classList.toggle('queued', queued);
       await fetch('queue', {method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({set: e.set, key: e.key, queued})});
@@ -240,6 +265,25 @@ function openEditor(e) {
   $('ename').textContent = `${e.name} — ${e.key}`;
   $('eimg').src = `${e.src}?v=${e.mtime}`;
   $('estatus').textContent = '';
+  const history = $('ehistory');
+  history.replaceChildren(...e.edits.map(text => Object.assign(document.createElement('li'), {textContent: text})));
+  $('eimprove').value = '';
+  $('eundo').disabled = $('erevert').disabled = !e.edits.length;
+  $('eprevious').disabled = !e.previous;
+  const ask = async (path, body, label) => {
+    $('estatus').textContent = 'saving…';
+    const r = await post(path, {set: e.set, key: e.key, ...body});
+    $('estatus').textContent = r.ok ? label : `failed: ${await r.text()}`;
+    poll();
+  };
+  $('eimprove-go').onclick = () => {
+    if ($('eimprove').value.trim()) ask('improve', {text: $('eimprove').value}, 'edit queued');
+  };
+  $('eundo').onclick = () => ask('undo', {}, 'undo queued');
+  $('erevert').onclick = () => {
+    if (confirm(`Revert to the original picture, before all ${e.edits.length} edit(s)?`)) ask('undo', {revert: true}, 'revert queued');
+  };
+  $('eprevious').onclick = () => ask('undo', {previous: true}, 'previous picture queued');
   const box = $('eparts');
   box.replaceChildren();
   for (const p of e.edit) {
@@ -286,7 +330,7 @@ async function poll() {
   if (!LIVE) return;
   try {
     const entries = await (await fetch('gallery.json', {cache: 'no-store'})).json();
-    const sig = JSON.stringify(entries.map(e => [e.key, e.mtime, e.queue, e.reviewed, e.concept]));
+    const sig = JSON.stringify(entries.map(e => [e.key, e.mtime, e.queue, e.reviewed, e.concept, e.edits.length, e.previous]));
     if (sig !== last) { last = sig; render(entries); }
     $('live').textContent = `live · ${new Date().toLocaleTimeString()}`;
   } catch { $('live').textContent = 'live · server not responding'; }
@@ -296,9 +340,9 @@ render(SNAPSHOT);
 if (LIVE) {
   for (const id of ['copy', 'clear', 'n', 'cmd']) $(id).style.display = 'none';
   $('how').textContent = 'Click an icon to flag it for regeneration (click again to un-flag). ' +
-    'Hover for ✓ (approve) and ✎ (edit its prompt). A running build repaints flagged icons first; ' +
+    'Hover for ✓ (approve) and ✎ (improve this picture or edit its prompt). A running build repaints flagged icons first; ' +
     'the new one swaps in with a green outline, and a regenerated approved icon moves back to To review.';
-  last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime, e.queue, e.reviewed, e.concept]));
+  last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime, e.queue, e.reviewed, e.concept, e.edits.length, e.previous]));
   poll(); setInterval(poll, 5000);
 } else {
   $('live').textContent = 'snapshot — run `pixi run icons-gallery` for live updates';
@@ -308,17 +352,34 @@ if (LIVE) {
 
 
 def queue_states(icons_dir: Path) -> dict[str, str]:
-    """key -> "queued" while waiting, "rendering" once a build has claimed it; unflagged
-    keys are absent. One listing of the folder, not a glob per icon: compiling a
-    pattern for each of hundreds of keys was most of a gallery poll's time."""
+    """key -> "queued" while waiting, "rendering" once a build has claimed it, and
+    "edit-queued" / "editing" for an improve or undo request (a flag with content);
+    unflagged keys are absent. One listing of the folder, not a glob per icon: compiling
+    a pattern for each of hundreds of keys was most of a gallery poll's time."""
     queue = icons_dir.parent.parent / "queue"
     states: dict[str, str] = {}
-    for name in (p.name for p in queue.iterdir()) if queue.is_dir() else ():
-        key, claimed, _ = name.partition(".")
+    for flag in queue.iterdir() if queue.is_dir() else ():
+        key, claimed, _ = flag.name.partition(".")
         # A plain flag outranks a claim: re-flagged while rendering means "do it again".
         if not claimed or key not in states:
-            states[key] = "rendering" if claimed else "queued"
+            try:
+                edit = flag.stat().st_size > 0
+            except FileNotFoundError:
+                continue  # claimed or finished between the listing and this look
+            states[key] = ("editing" if edit else "rendering") if claimed else ("edit-queued" if edit else "queued")
     return states
+
+
+def replaced_versions(history: Path) -> dict[str, list[int]]:
+    """picture -> the timestamps of its set-aside versions in `history/replaced/`
+    (`<picture>@<ns>/`), for "Previous picture"."""
+    versions: dict[str, list[int]] = {}
+    replaced = history / "replaced"
+    for directory in replaced.iterdir() if replaced.is_dir() else ():
+        picture, _, stamp = directory.name.rpartition("@")
+        if picture and stamp.isdigit():
+            versions.setdefault(picture, []).append(int(stamp))
+    return versions
 
 
 def reviewed_path(icons_dir: Path) -> Path:
@@ -342,6 +403,9 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
     an icon set's lines are `concepts`, one per picture."""
     marks = reviewed_marks(icons_dir)
     queued = queue_states(icons_dir)
+    manifest_path = icons_dir.parent.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    previous = replaced_versions(icons_dir.parent.parent / "glyphs" / "history")
     uses = Counter(p for ability in abilities.values() for p in ability.parts)
     shared = Counter(ability.picture for ability in abilities.values() if ability.picture)
     found = []
@@ -376,6 +440,10 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
             # A mark on an older picture does not count: the new one has not been seen.
             "reviewed": marks.get(path.stem) == mtime,
             "edit": edit,
+            # The improvements applied to the current picture, oldest first.
+            "edits": manifest.get(ability.picture or path.stem, {}).get("edits", []),
+            # How many pictures a repaint replaced and "Previous picture" can bring back.
+            "previous": len(previous.get(ability.picture or path.stem, [])),
         })
     return found
 

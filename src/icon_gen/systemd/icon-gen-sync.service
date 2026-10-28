@@ -1,0 +1,9 @@
+[Unit]
+Description=icon_gen: back up the working set to Google Drive
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/python-experiments
+ExecStart=%h/.pixi/bin/pixi run icons-sync push
+Nice=10

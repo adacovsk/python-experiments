@@ -1,0 +1,11 @@
+[Unit]
+Description=icon_gen: nightly Google Drive backup
+
+[Timer]
+# Clear of the 02:00 pipeline jobs. Persistent catches up a night the laptop was off.
+OnCalendar=*-*-* 04:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

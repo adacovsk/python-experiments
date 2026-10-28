@@ -42,8 +42,11 @@ pixi run icons --report                  # coverage and collisions only
 pixi run icons --records players --all   # conditions | effects | players | npcs | monsters
 pixi run icons-gallery                   # live review page: click to regenerate, ✓ to approve, ✎ to edit the prompt
 pixi run icons-cloud                     # Cloudflare worker that rides the daily allowance
+pixi run icons-sync push                 # back up the working set to Google Drive (pull restores it)
 ```
-Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--watch`, `--icon-size`, `--export <dir>`. `systemd/` has user units for the local worker, the cloud worker and the gallery. Cloudflare needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment.
+Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--watch`, `--icon-size`, `--export <dir>` (approved pictures only), `--export-size`. `systemd/` has user units for the local worker, the cloud worker, the gallery and a nightly `icons-sync push` timer. Cloudflare needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment.
+
+Renders and review marks live in `$ICON_GEN_OUT` (pixi.toml; `~/.local/share/icon_gen`), outside both repos; records are read from `$BEVY_RPG`. Approved pictures reach the game only through `--export`. **Backup, once:** `pixi run rclone config create gdrive drive scope=drive.file` opens a browser to authorise Google Drive; rclone then sees only the `icon_gen` folder it creates.
 
 **Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · TAESD/TAEF1 decoders
 

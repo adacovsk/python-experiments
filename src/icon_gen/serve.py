@@ -5,7 +5,10 @@ monster portraits, read fresh from disk
 on every poll, so icons appear as running builds finish them. Clicking an icon flags
 it for regeneration (POST /queue with its set); a build repaints flagged icons first
 and clears the flag. POST /review marks icons reviewed (the page hides them), and
-POST /concept rewrites a concept line, which running builds pick up. Bound to
+POST /concept rewrites a concept line, which running builds pick up. POST /improve
+flags an icon for an edit of its current picture from an instruction, and POST /undo
+for putting back the picture from before the last edit, the original, or the picture
+a repaint replaced. Bound to
 127.0.0.1 only.
 """
 from __future__ import annotations
@@ -21,9 +24,9 @@ from pathlib import Path
 import gallery
 import portraits
 from build import CONCEPT_FILES, PORTRAITS, default_size, load_records
+from paths import OUTPUT, REPO
 
 HERE = Path(__file__).resolve().parent
-OUTPUT = HERE / "output"
 
 # (output set, records, heading or None to group by record type), in page order.
 SETS = (
@@ -82,7 +85,8 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
-        route = {"/queue": self.post_queue, "/review": self.post_review, "/concept": self.post_concept}
+        route = {"/queue": self.post_queue, "/review": self.post_review, "/concept": self.post_concept,
+                 "/improve": self.post_improve, "/undo": self.post_undo}
         handler = route.get(self.path.split("?", 1)[0])
         if handler is None:
             self.send_error(404)
@@ -128,6 +132,38 @@ class Handler(SimpleHTTPRequestHandler):
                 flag.touch()
         else:
             flag.unlink(missing_ok=True)
+
+    def ask(self, set_name: str, key: str, payload: dict) -> None:
+        """Flag an icon with a request a build reads from the flag (build.Queue).
+
+        Written beside the queue and moved in, so a build never claims a half-written
+        flag; and written even while the icon is being handled, unlike a plain flag,
+        since the instruction is new work, not a repeat of the running one."""
+        queue = OUTPUT / set_name / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        temporary = queue.parent / f".{key}.{os.getpid()}.request"
+        temporary.write_text(json.dumps(payload))
+        os.replace(temporary, queue / key)
+
+    def post_improve(self, set_name: str, body: dict) -> None:
+        """Ask for the current picture edited as an instruction says, not repainted."""
+        key, text = str(body.get("key", "")), " ".join(str(body.get("text", "")).split())
+        if key not in self.records[set_name] or not text:
+            self.send_error(400, "unknown key or empty instruction")
+            return
+        self.ask(set_name, key, {"improve": text})
+        self.reply()
+
+    def post_undo(self, set_name: str, body: dict) -> None:
+        """Ask for the picture from before the last edit, with `revert` the original, or
+        with `previous` the picture a repaint replaced."""
+        key = str(body.get("key", ""))
+        if key not in self.records[set_name]:
+            self.send_error(400, "unknown key")
+            return
+        which = "previous" if body.get("previous") else "revert" if body.get("revert") else "undo"
+        self.ask(set_name, key, {which: True})
+        self.reply()
 
     def icons_dir(self, set_name: str) -> Path:
         return OUTPUT / set_name / "icons" / str(default_size(KINDS[set_name]))
@@ -201,7 +237,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, default=Path.home() / "code" / "bevy-rpg")
+    parser.add_argument("--repo", type=Path, default=REPO)
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     records = {set_name: load_records(kind, args.repo) for set_name, kind, _ in SETS}
