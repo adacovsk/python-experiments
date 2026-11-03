@@ -52,3 +52,6 @@ Thumbs.db
 
 # Local binaries (fetched by setup scripts)
 tools/
+
+# bevy-rpg content descriptions (private game content; keep out of this public repo)
+src/icon_gen/concepts*.json
