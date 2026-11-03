@@ -7,7 +7,7 @@ Layers, back to front:
   to fill the frame;
 - **colour coding** — the palette that applies (damage type, else harm/heal/help,
   else tradition, else ability type): the picture is gradient-mapped onto its ramp,
-  and the frame's glow and inner rim take its middle colour;
+  and the frame's inner rim takes its middle colour;
 - **badges** — action cost pips top-left, area shape mark bottom-right, drawn as
   vectors so they are crisp at any export size.
 
@@ -151,17 +151,18 @@ def glyph_layer(render_png: bytes, box: int, ramp: list[list[int]], blend: float
     return Image.alpha_composite(shadow, glyph)
 
 
-def glow(size: int, mask: Image.Image, colour: tuple[int, int, int]) -> Image.Image:
-    """The frame's fill: dark, lit from the centre in the ability's colour, so the type
-    coding reads behind a full-colour picture without repainting the picture itself."""
-    yy, xx = np.mgrid[0:size, 0:size]
-    radius = np.hypot(xx - size / 2, yy - size / 2) / (size / 2)
-    strength = np.clip(1.0 - radius, 0.0, 1.0) ** 1.6 * 0.55
-    fill = np.zeros((size, size, 4), dtype=np.float32)
-    for channel in range(3):
-        fill[..., channel] = BACKGROUND[channel] * (1 - strength) + colour[channel] * strength
-    fill[..., 3] = np.asarray(mask, dtype=np.float32)
-    return Image.fromarray(fill.astype(np.uint8), "RGBA")
+def fill(size: int, mask: Image.Image) -> Image.Image:
+    """The frame's fill: flat and as dark as the renders' own black backdrop.
+
+    Don't light it in the ability's colour. The cut makes every shadow inside the
+    subject transparent too, since a shadow is as dark as the backdrop, so a lit fill
+    shows through the figure as a spotlight; filling those shadows in instead leaves
+    them as black blobs against the lit fill, a halo. Only a fill that matches the
+    backdrop hides both. The type coding is carried by the rim's inner band.
+    """
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(Image.new("RGBA", (size, size), BACKGROUND), mask=mask)
+    return canvas
 
 
 def _diamond(draw: ImageDraw.ImageDraw, cx: float, cy: float, r: float, filled: bool, width: int) -> None:
@@ -215,7 +216,7 @@ def compose(ability: Ability, render_png: bytes, export_size: int) -> Image.Imag
     scheme = palette(ability)
     colour = tuple(scheme["ramp"][len(scheme["ramp"]) // 2])
 
-    canvas = glow(size, mask, colour)
+    canvas = fill(size, mask)
 
     glyph_size = int(size * 0.84)
     glyph = glyph_layer(render_png, glyph_size, scheme["ramp"], PALETTE["blend"])
@@ -226,7 +227,6 @@ def compose(ability: Ability, render_png: bytes, export_size: int) -> Image.Imag
     clipped.paste(layer, mask=Image.fromarray(np.minimum(np.asarray(layer)[..., 3], np.asarray(mask)), "L"))
     canvas = Image.alpha_composite(canvas, clipped)
 
-    # With the glow behind the picture, the rim's inner band is where the type coding lives.
     canvas = Image.alpha_composite(canvas, rim(shape, size, inset, colour))
 
     draw_badges(canvas, ability)
