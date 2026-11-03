@@ -8,7 +8,8 @@ and clears the flag. POST /review marks icons reviewed (the page hides them), an
 POST /concept rewrites a concept line, which running builds pick up. POST /improve
 flags an icon for an edit of its current picture from an instruction, and POST /undo
 for putting back the picture from before the last edit, the original, or the picture
-a repaint replaced. Bound to
+a repaint replaced. GET /prompt.json shows the full prompt an icon is painted from, and
+POST /style rewrites the style line every prompt in its sets ends with. Bound to
 127.0.0.1 only.
 """
 from __future__ import annotations
@@ -20,9 +21,11 @@ import os
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import gallery
 import portraits
+import prompts
 from build import CONCEPT_FILES, PORTRAITS, default_size, load_records
 from paths import OUTPUT, REPO
 
@@ -61,32 +64,61 @@ class Handler(SimpleHTTPRequestHandler):
         found = []
         parts = {**portraits.concepts(), "monster": portraits.monster_concepts()}
         for section, (set_name, kind, heading) in enumerate(SETS):
-            concept_file = HERE / CONCEPT_FILES[kind]
-            # A portrait's concept is its record's assembled subject, not a lookup.
-            concepts = {} if kind in PORTRAITS or not concept_file.exists() else json.loads(concept_file.read_text())
             found += gallery.entries(OUTPUT / set_name / "icons" / str(default_size(kind)), OUTPUT, self.records[set_name],
-                                     concepts, set_name, section, heading, parts)
+                                     self.concepts(kind), set_name, section, heading, parts)
         return found
 
+    def concepts(self, kind: str) -> dict[str, str]:
+        """An icon set's concept lines; a portrait's are already folded into its subject."""
+        concept_file = HERE / CONCEPT_FILES[kind]
+        return {} if kind in PORTRAITS or not concept_file.exists() else json.loads(concept_file.read_text())
+
+    def prompt_info(self, query: dict[str, list[str]]) -> dict | None:
+        """The pieces of one icon's prompt as the build assembles it, the style's sets,
+        and the prompt its current picture was actually painted from."""
+        set_name, key = query.get("set", [""])[0], query.get("key", [""])[0]
+        record = self.records.get(set_name, {}).get(key)
+        if record is None:
+            return None
+        kind = KINDS[set_name]
+        portrait = kind in PORTRAITS
+        style_key = prompts.style_key(kind, portrait)
+        manifest_path = OUTPUT / set_name / "manifest.json"
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        return {"subject": prompts.subject(record, self.concepts(kind)), "colours": prompts.colours(record, portrait),
+                "style_key": style_key, "style": prompts.styles()[style_key],
+                "style_sets": [name for name, k, _ in SETS if prompts.style_key(k, k in PORTRAITS) == style_key],
+                "painted": manifest.get(record.picture or key, {}).get("prompt", "")}
+
+    def send_json(self, data: object) -> None:
+        body = json.dumps(data).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
+        if path == "/prompt.json":
+            info = self.prompt_info(parse_qs(query))
+            if info is None:
+                self.send_error(400, "unknown set or key")
+            else:
+                self.send_json(info)
+            return
         if path in ("/", "/gallery.html"):
             gallery.write_page(OUTPUT / "gallery.html", self.all_entries(), "cloudflare")
             self.path = "/gallery.html"
         elif path == "/gallery.json":
-            body = json.dumps(self.all_entries()).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(self.all_entries())
             return
         super().do_GET()
 
     def do_POST(self) -> None:
         route = {"/queue": self.post_queue, "/review": self.post_review, "/concept": self.post_concept,
-                 "/improve": self.post_improve, "/undo": self.post_undo}
+                 "/improve": self.post_improve, "/undo": self.post_undo, "/style": self.post_style}
         handler = route.get(self.path.split("?", 1)[0])
         if handler is None:
             self.send_error(404)
@@ -230,6 +262,23 @@ class Handler(SimpleHTTPRequestHandler):
         for k in flagged:
             self.flag(set_name, k)
         self.reply({"flagged": len(flagged)})
+
+    def post_style(self, set_name: str, body: dict) -> None:
+        """Rewrite the style line of this set's prompts, and flag this icon if asked.
+
+        Not empty: the composer cuts the subject out against a plain background, and a
+        prompt with no style asks for none."""
+        key, text = str(body.get("key", "")), " ".join(str(body.get("text", "")).split())
+        regenerate = body.get("regenerate")
+        if key not in self.records[set_name] or not text or regenerate not in ("this", "none"):
+            self.send_error(400, "unknown key, empty style or bad regenerate mode")
+            return
+        kind = KINDS[set_name]
+        with LOCK:
+            prompts.save_style(prompts.style_key(kind, kind in PORTRAITS), text)
+        if regenerate == "this":
+            self.flag(set_name, key)
+        self.reply({"flagged": int(regenerate == "this")})
 
     def log_message(self, *_: object) -> None:
         pass  # one line per poll every five seconds is noise

@@ -8,7 +8,8 @@ reads fresh from disk, so icons appear as a running batch finishes them and a
 re-rolled icon refreshes in place. Nothing is uploaded anywhere either way.
 
 Live, each icon can also be approved (moved from the To review tab to Approved) and
-have its prompt edited. A review mark is the icon's mtime, kept in
+have its prompt edited: the editor shows the full prompt the next repaint sends, and
+the style line every prompt in its sets ends with (prompts.py, styles.json). A review mark is the icon's mtime, kept in
 `<set>/reviewed.json`, so a regenerated icon comes back up for review on its own.
 """
 from __future__ import annotations
@@ -74,6 +75,11 @@ dialog textarea { width:100%; box-sizing:border-box; min-height:84px; margin:4px
   color:var(--text); border:1px solid #444; border-radius:6px; font:13px/1.4 system-ui, sans-serif; }
 dialog .row { display:flex; gap:6px; flex-wrap:wrap; }
 dialog .note { color:var(--muted); font-size:12px; }
+dialog pre { white-space:pre-wrap; margin:4px 0; padding:6px; background:#0c0c10; border:1px solid #333; border-radius:6px;
+  font:12px/1.45 ui-monospace, monospace; }
+dialog .subject { color:var(--text); }
+dialog .colours { color:var(--pick); }
+dialog .style { color:#8fb0d8; }
 </style></head><body>
 <header>
   <h1 id="title">Icon review</h1>
@@ -111,6 +117,20 @@ dialog .note { color:var(--muted); font-size:12px; }
     were improved or brought back, which keep theirs until regenerated. Regenerating sets the old
     picture aside under glyphs/history/replaced/; "Previous picture" brings it back.</p>
   <div id="eparts"></div>
+  <div class="part">
+    <b id="estylehead"></b>
+    <textarea id="estyle"></textarea>
+    <div class="row"><button type="button" id="estyle-this">Save &amp; regenerate this</button><button type="button" id="estyle-save">Save only</button></div>
+    <p class="note">Appended to every prompt in these sets. Approved and improved pictures keep theirs;
+      the rest pick up a saved style the next time an <code>--all</code> pass reaches them. Keep it asking
+      for a plain black background: the subject is cut out by its difference from the backdrop.</p>
+  </div>
+  <div class="part">
+    <b>Full prompt — what the next repaint sends: <span class="subject">subject</span>,
+      <span class="colours">palette colours</span>, <span class="style">style</span></b>
+    <pre id="efull"></pre>
+    <div id="epainted"><b>This picture was painted from</b><pre></pre></div>
+  </div>
   <div class="row" style="margin-top:12px"><button value="close">Close</button><span id="estatus" class="note"></span></div>
 </form></dialog>
 <script>
@@ -286,6 +306,41 @@ function openEditor(e) {
   $('eprevious').onclick = () => ask('undo', {previous: true}, 'previous picture queued');
   const box = $('eparts');
   box.replaceChildren();
+  // The prompt as the build assembles it (prompts.prompt), redrawn as the concept and
+  // style are edited. A portrait's subject is put together from its parts by the
+  // server, so it updates on save rather than as you type.
+  let info = null;
+  const single = e.edit.length === 1 && e.edit[0].part === null;
+  const full = () => {
+    if (!info) return;
+    const concept = single ? box.querySelector('textarea').value.trim() : '';
+    const pieces = [['subject', concept || info.subject], ['colours', info.colours], ['style', `, ${$('estyle').value.trim()}`]];
+    $('efull').replaceChildren(...pieces.map(([cls, text]) => Object.assign(document.createElement('span'), {className: cls, textContent: text})));
+    const next = pieces.map(p => p[1]).join('');
+    $('epainted').hidden = !info.painted || info.painted === next;
+    $('epainted').querySelector('pre').textContent = info.painted;
+  };
+  const load = async () => {
+    const r = await fetch(`prompt.json?set=${encodeURIComponent(e.set)}&key=${encodeURIComponent(e.key)}`, {cache: 'no-store'});
+    if (!r.ok) { $('efull').textContent = `could not load the prompt: ${await r.text()}`; return; }
+    const keepStyle = info && $('estyle').value !== info.style;
+    info = await r.json();
+    $('estylehead').textContent = `style · ${info.style_key} — shared by every picture in ${info.style_sets.join(', ')}`;
+    if (!keepStyle) $('estyle').value = info.style;
+    full();
+  };
+  $('estyle').oninput = full;
+  const saveStyle = async regenerate => {
+    $('estatus').textContent = 'saving…';
+    const r = await post('style', {set: e.set, key: e.key, text: $('estyle').value, regenerate});
+    $('estatus').textContent = r.ok ? `style saved${regenerate === 'this' ? ', flagged for regeneration' : ''}` : `failed: ${await r.text()}`;
+    info = null; load(); poll();
+  };
+  $('estyle-this').onclick = () => saveStyle('this');
+  $('estyle-save').onclick = () => saveStyle('none');
+  $('efull').textContent = 'loading…';
+  $('estyle').value = '';
+  $('epainted').hidden = true;
   for (const p of e.edit) {
     const d = document.createElement('div');
     d.className = 'part';
@@ -296,12 +351,13 @@ function openEditor(e) {
     const text = d.querySelector('textarea');
     text.value = p.text;
     text.placeholder = p.fallback || '(empty: falls back to the name)';
+    text.addEventListener('input', full);
     const row = d.querySelector('.row');
     const save = async regenerate => {
       $('estatus').textContent = 'saving…';
       const r = await post('concept', {set: e.set, key: e.key, part: p.part, part_key: p.key, text: text.value, regenerate});
       $('estatus').textContent = r.ok ? `saved${(await r.json()).flagged ? ', flagged for regeneration' : ''}` : `failed: ${await r.text()}`;
-      poll();
+      load(); poll();
     };
     const buttons = [['Save & regenerate this', 'this']];
     if (p.uses > 1) buttons.push([`Save & regenerate all ${p.uses}`, 'all']);
@@ -314,6 +370,7 @@ function openEditor(e) {
     }
     box.appendChild(d);
   }
+  load();
   $('edit').showModal();
 }
 

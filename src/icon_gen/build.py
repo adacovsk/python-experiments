@@ -43,59 +43,13 @@ from PIL import Image
 import abilities as ability_data
 import gallery
 import portraits
-from compose import PALETTE, compose, compose_portrait, palette
+import prompts
+from compose import PALETTE, compose, compose_portrait
 from paths import OUTPUT, REPO
 from render import CloudflareRenderer, PromptRefused, QuotaExhausted, Renderer
 from unique import collisions, fingerprint
 
 HERE = Path(__file__).resolve().parent
-
-# Describes only what we want. These models run without CFG, so negative prompts are
-# inert, and naming an unwanted thing in the positive prompt ("no circle") tends to
-# draw it. "Emblem" and "symbol" are avoided too: they produce ornate seals, which blur
-# into look-alike medallions at icon size, where a single concrete subject stays legible.
-# The look is antique engraving and occult tarot with a cosmic-horror mood, described
-# rather than named after any game or artist.
-STYLE = ("an eldritch cosmic-horror illustration in the style of an antique engraving and an "
-         "occult tarot card, ominous and ancient, unsettling stylised forms, fine etched linework "
-         "with subtle painterly texture, muted limited palette with tarnished gold accents, "
-         "one subject centered on a plain black background")
-# Only read with CFG above 1; at the distilled models' settings it is inert, which is
-# why the composer fades picture edges rather than relying on it.
-# Portraits are lit like chiaroscuro but painted as illustrations: naming an old master
-# pulled the renders photoreal. A face read out of the dark by one hard light, framed as
-# a bust, has to stand on its own at gallery size. "Head and
-# upper body" rather than "head and shoulders", which a worm or an ooze does not have.
-# A bare "muted limited palette" greyed every face to the same pallor, so a goblin's
-# green or a nephilim's gold, the quickest tell of an ancestry, never came through: the
-# palette is scoped to clothing and metal, and skin is named as keeping its colour.
-# Otherwise the vocabulary is the icons' STYLE, so a portrait reads as the same hand:
-# etched engraving linework, tarnished gold. "Gaunt" and "grim" keep the model off the
-# pretty anime and grinning cartoon faces a plain "portrait" drifts into; "weathered"
-# did too, but aged nearly every character, so age is left to the `variety` list. These
-# describe the mood, not a face: "a stylised face with gaunt features" in every prompt
-# outvoted any ancestry without a human head, so a leshy came out a man with leaves.
-# No fixed pose either: the subject carries its own angle and light (portraits.Variety).
-PORTRAIT_STYLE = ("an eldritch dark-fantasy portrait in the style of an antique engraving and an occult "
-                  "tarot card, fine etched ink linework with cross-hatched shading and subtle painterly "
-                  "texture, gaunt and grim, ominous and ancient, "
-                  "muted limited palette with tarnished gold accents on clothing and metal, skin, eyes "
-                  "and hair keeping their own natural colours, one hard light from the side against deep "
-                  "shadow, clearly an illustration rather than a photograph, the head and upper body "
-                  "filling the frame, the features clearly lit, on a plain black background")
-# Monsters keep the portrait's hand but not its sitter. "Portrait", "upper body" and gold
-# "on clothing" describe a dressed bust, so every boar, shark and camel came out in the
-# same black robe with gold clasps. Any garb a monster really has is in its own concept
-# line; the style describes only a body, in its natural hide, and never names clothing,
-# which at these settings would draw it.
-MONSTER_STYLE = ("an eldritch dark-fantasy creature study in the style of an antique engraving and an "
-                 "occult tarot card, fine etched ink linework with cross-hatched shading and subtle "
-                 "painterly texture, ominous and ancient, muted limited palette with tarnished gold "
-                 "highlights, its natural hide, scales, fur, feathers or flesh keeping their own colours, "
-                 "one hard light from the side against deep shadow, clearly an illustration rather than "
-                 "a photograph, the creature's head and body filling the frame, clearly lit, on a plain "
-                 "black background")
-NEGATIVE = "text, letters, numbers, words, border, frame, photo, multiple objects, clutter, watermark"
 
 # Art direction, one per ability key: a single concrete image drawn from the record's
 # name, description and traits. Kept here rather than in the game's records because the
@@ -270,16 +224,7 @@ class Build:
         picture = ability.picture or ability.key
         entry = self.manifest.get(picture, {})
         attempt = self.bumped.get(picture, entry.get("attempt", 0))
-        # A written concept is one concrete image ("a hawk on a gloved fist"); the record's
-        # own text is the fallback, and often has nothing drawable in it.
-        subject = CONCEPTS.get(picture) or ability.prompt_subject()
-        # Asking for the palette's colours up front means the gradient map refines the
-        # picture rather than fighting it — except for a shared picture, whose records
-        # take different palettes, so it is painted neutral and only recoloured.
-        # A portrait is painted in its own colours and never recoloured.
-        colours = "" if ability.picture or self.portrait else f", rendered in {palette(ability)['words']}"
-        style = MONSTER_STYLE if self.args.records == "monsters" else PORTRAIT_STYLE if self.portrait else STYLE
-        prompt = f"{subject}{colours}, {style}"
+        prompt = prompts.prompt(ability, CONCEPTS, self.args.records, self.portrait)
         seed = seed_for(picture, attempt)
         path = self.glyphs / f"{picture}.png"
         # An edited or restored picture was chosen by someone looking at it, so a changed
@@ -288,7 +233,7 @@ class Build:
         kept = entry.get("edits") or entry.get("restored")
         if path.exists() and entry.get("seed") == seed and (kept or entry.get("prompt") == prompt):
             return path.read_bytes()
-        png = self.renderer().render(prompt, NEGATIVE, seed)
+        png = self.renderer().render(prompt, prompts.NEGATIVE, seed)
         if path.exists():
             self.set_aside(picture, entry)
         write_atomically(path, png)
