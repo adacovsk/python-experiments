@@ -45,6 +45,8 @@ class Model:
     files: tuple[str, ...]
     steps: int
     sampler: str
+    # None means one thread per physical core.
+    threads: int | None = None
 
 
 MODELS = {
@@ -59,6 +61,8 @@ MODELS = {
         ),
         steps=4,
         sampler="euler",
+        # Runs for hours in the background beside other work; one thread keeps it out of the way.
+        threads=1,
     ),
     # Adversarially distilled for a single step, also without CFG.
     "turbo": Model(
@@ -96,7 +100,7 @@ class Renderer:
             raise SystemExit("sd-server not found — run `pixi run icons-setup` first")
         self.log.parent.mkdir(parents=True, exist_ok=True)
         # One thread per physical core: hyperthreads add little to dense matrix work.
-        threads = max(1, (os.cpu_count() or 2) // 2)
+        threads = self.model.threads or max(1, (os.cpu_count() or 2) // 2)
         self.process = subprocess.Popen(
             ["nice", "-n", "19", str(SD_SERVER), *self.model.files, "-t", str(threads), "--listen-port", str(self.port)],
             stdout=self.log.open("w"), stderr=subprocess.STDOUT,
