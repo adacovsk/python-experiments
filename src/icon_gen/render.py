@@ -9,10 +9,10 @@ image on this CPU, and the detail it adds is lost at icon size anyway.
 
 Runs at nice 19 — the machine is shared with other builds.
 
-**Cloudflare** — FLUX.1 [schnell] on Workers AI: the same model as the local FLUX,
-seconds per image instead of half an hour, within a free daily allowance. Needs
-CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment. It also edits an
-existing picture from an instruction (`edit`), with FLUX.2 [klein] 4B.
+**Cloudflare** — FLUX.2 [klein] 4B on Workers AI, for both painting and editing an
+existing picture from an instruction (`edit`): seconds per image instead of half an
+hour, within a free daily allowance. Needs CLOUDFLARE_ACCOUNT_ID and
+CLOUDFLARE_API_TOKEN in the environment.
 """
 from __future__ import annotations
 
@@ -150,18 +150,18 @@ class PromptRefused(Exception):
 
 
 class CloudflareRenderer:
-    """FLUX.1 [schnell] on Workers AI.
+    """FLUX.2 [klein] 4B on Workers AI.
 
-    The endpoint takes no seed (it rejects one) and no negative prompt, so both are
-    ignored: a re-roll is simply a fresh request, and the build's cache is what makes
-    an interrupted run resumable.
+    The 4B klein, not the 9B or FLUX.2 [dev]: it is the one of the three under Apache
+    2.0, so its pictures are safe to ship. It follows a prompt more closely than
+    FLUX.1 [schnell] (hands and anatomy above all), honours a seed, and costs fewer
+    neurons per picture. It takes no negative prompt, which is ignored.
     """
 
-    MODEL = "@cf/black-forest-labs/flux-1-schnell"
-    # Edits take the picture as a reference image plus an instruction. The 4B klein, not
-    # the 9B or FLUX.2 [dev]: it is the one of the three under Apache 2.0, like schnell,
-    # so an edited picture is as safe to ship as a fresh one.
-    EDIT_MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+    MODEL = "@cf/black-forest-labs/flux-2-klein-4b"
+    # Neurons are charged per 512 px output tile, so a 1024 px render costs four times a
+    # 512 one, and nothing beyond 512 survives the downscale to a 128 or 256 px icon.
+    SIZE = 512
     # The endpoint rejects a reference image of 512 px or more on a side.
     EDIT_INPUT = 496
 
@@ -171,9 +171,7 @@ class CloudflareRenderer:
             self.token = os.environ["CLOUDFLARE_API_TOKEN"]
         except KeyError as missing:
             raise SystemExit(f"{missing.args[0]} is not set — see the icon_gen section of the README")
-        base = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run"
-        self.url = f"{base}/{self.MODEL}"
-        self.edit_url = f"{base}/{self.EDIT_MODEL}"
+        self.url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{self.MODEL}"
 
     def __enter__(self) -> "CloudflareRenderer":
         return self
@@ -182,8 +180,10 @@ class CloudflareRenderer:
         pass
 
     def render(self, prompt: str, negative: str, seed: int) -> bytes:
-        body = json.dumps({"prompt": prompt[:2048], "steps": 4}).encode()
-        return self.run(self.url, body, "application/json")
+        boundary = uuid.uuid4().hex
+        body = multipart(boundary, {"prompt": prompt[:2048], "width": str(self.SIZE),
+                                    "height": str(self.SIZE), "seed": str(seed)}, {})
+        return self.run(self.url, body, f"multipart/form-data; boundary={boundary}")
 
     def edit(self, picture: bytes, instruction: str, seed: int, size: int) -> bytes:
         """`picture` changed as `instruction` says, the rest of it kept.
@@ -200,7 +200,7 @@ class CloudflareRenderer:
         boundary = uuid.uuid4().hex
         body = multipart(boundary, {"prompt": prompt[:2048], "width": str(size), "height": str(size), "seed": str(seed)},
                          {"input_image_0": encoded.getvalue()})
-        return self.run(self.edit_url, body, f"multipart/form-data; boundary={boundary}")
+        return self.run(self.url, body, f"multipart/form-data; boundary={boundary}")
 
     def run(self, url: str, body: bytes, content_type: str) -> bytes:
         refusals = 0

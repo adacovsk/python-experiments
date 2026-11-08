@@ -27,7 +27,7 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 - RealESRGAN_x4plus.pth - 4x super-resolution enhancement
 
 ### 🎨 [icon_gen/](src/icon_gen/)
-Icons and portraits for a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, painted by FLUX.1 [schnell] (locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), or on Cloudflare Workers AI's free daily allowance) in an antique-engraving style, from written concepts:
+Icons and portraits for a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, painted by FLUX.1 [schnell] locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), or by FLUX.2 [klein] 4B on Cloudflare Workers AI's free daily allowance, in an antique-engraving style, from written concepts:
 - **Icons** — abilities (`concepts.json`), conditions and buff/debuff effects: the picture is gradient-mapped onto a palette (`palette.toml`: damage type, harm/heal/help, tradition, type) and framed by type with action-cost and area badges, at 128px
 - **Portraits** — players (ancestry × class × sex) and NPCs (role × ancestry), subjects assembled from per-part concepts (`concepts_portraits.json`), and monsters (`concepts_monsters.json`), in their own colours, at 256px
 - **Uniqueness** — look-alike icons are listed (and optionally re-rolled)
@@ -48,7 +48,7 @@ Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--wat
 
 Renders and review marks live in `$ICON_GEN_OUT` (pixi.toml; `~/.local/share/icon_gen`), outside both repos; records are read from `$BEVY_RPG`. Approved pictures reach the game only through `--export`. **Backup, once:** `pixi run rclone config create gdrive drive scope=drive.file` opens a browser to authorise Google Drive; rclone then sees only the `icon_gen` folder it creates.
 
-**Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · TAESD/TAEF1 decoders
+**Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · FLUX.2 [klein] 4B on Workers AI (Apache 2.0) · TAESD/TAEF1 decoders
 
 ### 📊 [benchmarks/](src/benchmarks/)
 Performance benchmarks and comparisons:

@@ -442,7 +442,7 @@ def main() -> None:
     parser.add_argument("--reverse", action="store_true",
                         help="work from the end of the list, so a second build can fill the set from the other side")
     parser.add_argument("--backend", choices=("local", "cloudflare"), default="local",
-                        help="cloudflare: FLUX.1 schnell on Workers AI (seconds per image, daily free allowance)")
+                        help="cloudflare: FLUX.2 klein 4B on Workers AI (seconds per image, daily free allowance)")
     parser.add_argument("--icon-size", type=int, help="export size (default 128 for icons, 256 for portraits)")
     which = parser.add_mutually_exclusive_group()
     which.add_argument("--only", help="comma-separated ability keys")
