@@ -57,8 +57,14 @@ figure img { width:100%; aspect-ratio:1; display:block; }
 figcaption { font-size:11px; margin-top:4px; overflow-wrap:anywhere; }
 figcaption b { display:block; font-size:12px; }
 figcaption span { color:var(--muted); }
+/* What the ability does, so the picture can be judged against it; clamped on the card,
+   whole in its tooltip and in the editor. */
+figcaption p { margin:4px 0 0; color:var(--muted); display:-webkit-box; -webkit-line-clamp:5;
+  -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:normal; }
 figure { position:relative; }
-.tools { position:absolute; bottom:44px; right:10px; display:none; gap:4px; }
+/* Over the image's top-left corner: the caption's height varies with the description,
+   and the queue badge has the top-right. */
+.tools { position:absolute; top:10px; left:10px; display:none; gap:4px; }
 figure:hover .tools { display:flex; }
 .tools button { padding:2px 7px; font-size:13px; background:#111d; }
 summary button { margin-left:12px; font-size:12px; padding:2px 8px; }
@@ -75,6 +81,7 @@ dialog textarea { width:100%; box-sizing:border-box; min-height:84px; margin:4px
   color:var(--text); border:1px solid #444; border-radius:6px; font:13px/1.4 system-ui, sans-serif; }
 dialog .row { display:flex; gap:6px; flex-wrap:wrap; }
 dialog .note { color:var(--muted); font-size:12px; }
+dialog .desc { margin:4px 0 0; font-size:13px; white-space:pre-wrap; }
 dialog pre { white-space:pre-wrap; margin:4px 0; padding:6px; background:#0c0c10; border:1px solid #333; border-radius:6px;
   font:12px/1.45 ui-monospace, monospace; }
 dialog .subject { color:var(--text); }
@@ -86,7 +93,7 @@ dialog .style { color:#8fb0d8; }
   <div class="tabs"><button id="tab-pending">To review (<span id="npend">0</span>)</button><button id="tab-approved">Approved (<span id="nrev">0</span>)</button></div>
   <p id="how" style="margin:0 0 8px;color:var(--muted);font-size:12px"></p>
   <div class="bar">
-    <input type="search" id="q" placeholder="Filter by key, name or concept">
+    <input type="search" id="q" placeholder="Filter by key, name, concept or description">
     <button id="copy">Copy reroll command</button>
     <button id="clear">Clear selection</button>
     <button id="fold">Collapse all</button>
@@ -100,6 +107,7 @@ dialog .style { color:#8fb0d8; }
 <dialog id="edit"><form method="dialog">
   <img id="eimg" alt="">
   <h2 id="ename"></h2>
+  <p id="edesc" class="desc"></p>
   <div class="part">
     <b>Improve this picture</b>
     <p class="note">Say what to change ("make the flame blue", "remove the second hand"); the rest of the
@@ -154,12 +162,17 @@ const $ = id => document.getElementById(id);
 function card(e) {
   const f = document.createElement('figure');
   f.dataset.key = e.key;
-  f.dataset.text = `${e.key} ${e.name} ${e.concept}`.toLowerCase();
-  f.title = e.concept;
+  f.dataset.text = `${e.key} ${e.name} ${e.concept} ${e.description}`.toLowerCase();
+  f.title = e.description ? `${e.description}\n\nConcept: ${e.concept}` : e.concept;
   f.innerHTML = `<img loading="lazy" alt=""><figcaption><b></b><span></span></figcaption>`;
   f.querySelector('img').src = `${e.src}?v=${e.mtime}`;
   f.querySelector('b').textContent = e.name;
   f.querySelector('span').textContent = e.key;
+  if (e.description) {
+    const desc = document.createElement('p');
+    desc.textContent = e.description;
+    f.querySelector('figcaption').appendChild(desc);
+  }
   if (e.edits.length) {
     const mark = document.createElement('i');
     mark.textContent = ` · ${e.edits.length} edit${e.edits.length > 1 ? 's' : ''}`;
@@ -230,7 +243,7 @@ function render(entries) {
       rest.addEventListener('click', ev => {
         ev.preventDefault(); ev.stopPropagation();
         const q = $('q').value.toLowerCase();
-        const keep = groups.get(kind).filter(e => !e.queue && !e.reviewed && `${e.key} ${e.name} ${e.concept}`.toLowerCase().includes(q));
+        const keep = groups.get(kind).filter(e => !e.queue && !e.reviewed && `${e.key} ${e.name} ${e.concept} ${e.description}`.toLowerCase().includes(q));
         if (keep.length && confirm(`Approve ${keep.length} icon(s) in "${kind}"?`)) review(keep, true);
       });
       summary.appendChild(rest);
@@ -283,6 +296,8 @@ function review(list, reviewed) {
 
 function openEditor(e) {
   $('ename').textContent = `${e.name} — ${e.key}`;
+  $('edesc').textContent = e.description;
+  $('edesc').hidden = !e.description;
   $('eimg').src = `${e.src}?v=${e.mtime}`;
   $('estatus').textContent = '';
   const history = $('ehistory');
@@ -490,6 +505,7 @@ def entries(icons_dir: Path, base: Path, abilities: dict[str, Ability], concepts
             "set": set_name,
             "section": section,
             "concept": concepts.get(ability.picture or path.stem) or ability.subject or "",
+            "description": ability.description,
             "src": path.relative_to(base).as_posix(),
             # Changes when an icon is re-rolled, so the page reloads that one image.
             "mtime": mtime,
