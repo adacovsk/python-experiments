@@ -81,7 +81,7 @@ dialog textarea { width:100%; box-sizing:border-box; min-height:84px; margin:4px
   color:var(--text); border:1px solid #444; border-radius:6px; font:13px/1.4 system-ui, sans-serif; }
 dialog .row { display:flex; gap:6px; flex-wrap:wrap; }
 dialog .note { color:var(--muted); font-size:12px; }
-dialog .desc { margin:4px 0 0; font-size:13px; white-space:pre-wrap; }
+dialog .desc { margin:4px 0 0; font-size:13px; white-space:pre-wrap; max-height:30vh; overflow:auto; }
 dialog pre { white-space:pre-wrap; margin:4px 0; padding:6px; background:#0c0c10; border:1px solid #333; border-radius:6px;
   font:12px/1.45 ui-monospace, monospace; }
 dialog .subject { color:var(--text); }
@@ -113,10 +113,13 @@ dialog .style { color:#8fb0d8; }
     <p class="note">Say what to change ("make the flame blue", "remove the second hand"); the rest of the
       picture is kept. Done by the Cloudflare build, so it waits for the daily allowance if that is spent.
       Every earlier version is kept, so you can step back one edit or revert to the original.
-      "Previous picture" brings back the one a repaint replaced (edits and all), and asked again swaps back.</p>
+      "Previous picture" brings back the one a repaint replaced (edits and all), and asked again swaps back.
+      "Open in image editor" opens a working copy of the picture: save it there
+      and it becomes the picture within a few seconds, as one more edit that can be undone. Keep the
+      background plain black; the subject is cut out against it.</p>
     <ol id="ehistory"></ol>
     <textarea id="eimprove" placeholder="What to change"></textarea>
-    <div class="row"><button type="button" id="eimprove-go">Improve</button><button type="button" id="eundo">Undo last edit</button><button type="button" id="erevert">Revert to original</button><button type="button" id="eprevious">Previous picture</button></div>
+    <div class="row"><button type="button" id="eimprove-go">Improve</button><button type="button" id="eundo">Undo last edit</button><button type="button" id="erevert">Revert to original</button><button type="button" id="eprevious">Previous picture</button><button type="button" id="eopen">Open in image editor</button></div>
   </div>
   <div class="part"><b>Prompt — repaints from scratch</b></div>
   <p class="note">Edits the concept line in the concept files. Leave a line empty to fall back to the
@@ -183,8 +186,14 @@ function card(e) {
     if (e.queue) f.classList.add(e.queue);
     const tools = document.createElement('div');
     tools.className = 'tools';
-    tools.innerHTML = `<button></button><button title="Improve this picture, or edit its prompt">✎</button>`;
-    const [ok, edit] = tools.querySelectorAll('button');
+    tools.innerHTML = `<button></button><button title="Improve this picture, or edit its prompt">✎</button>` +
+      `<button title="Open this picture in the image editor; saving over the file there replaces it">🖌</button>`;
+    const [ok, edit, paint] = tools.querySelectorAll('button');
+    paint.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      const r = await post('open', {set: e.set, key: e.key});
+      if (!r.ok) alert(`Could not open the editor: ${await r.text()}`);
+    });
     ok.textContent = e.reviewed ? '↶' : '✓';
     ok.title = e.reviewed ? 'Send back to review' : 'Looks good: approve';
     ok.addEventListener('click', ev => { ev.stopPropagation(); review([e], !e.reviewed); });
@@ -319,6 +328,7 @@ function openEditor(e) {
     if (confirm(`Revert to the original picture, before all ${e.edits.length} edit(s)?`)) ask('undo', {revert: true}, 'revert queued');
   };
   $('eprevious').onclick = () => ask('undo', {previous: true}, 'previous picture queued');
+  $('eopen').onclick = () => ask('open', {}, 'opened in the image editor: save over the file to use it');
   const box = $('eparts');
   box.replaceChildren();
   // The prompt as the build assembles it (prompts.prompt), redrawn as the concept and
@@ -412,7 +422,7 @@ render(SNAPSHOT);
 if (LIVE) {
   for (const id of ['copy', 'clear', 'n', 'cmd']) $(id).style.display = 'none';
   $('how').textContent = 'Click an icon to flag it for regeneration (click again to un-flag). ' +
-    'Hover for ✓ (approve) and ✎ (improve this picture or edit its prompt). A running build repaints flagged icons first; ' +
+    'Hover for ✓ (approve), ✎ (improve this picture or edit its prompt) and 🖌 (open it in the image editor). A running build repaints flagged icons first; ' +
     'the new one swaps in with a green outline, and a regenerated approved icon moves back to To review.';
   last = JSON.stringify(SNAPSHOT.map(e => [e.key, e.mtime, e.queue, e.reviewed, e.concept, e.edits.length, e.previous]));
   poll(); setInterval(poll, 5000);

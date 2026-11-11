@@ -30,6 +30,7 @@ AI-powered video and image enhancement toolkit with flexible pipeline support:
 Icons and portraits for a [bevy-rpg](https://github.com/adacovsk/bevy-rpg) checkout, painted by FLUX.1 [schnell] locally on the CPU with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), or by FLUX.2 [klein] 4B on Cloudflare Workers AI's free daily allowance, in an antique-engraving style, from written concepts:
 - **Icons** — abilities (`concepts.json`), conditions and buff/debuff effects: the picture is gradient-mapped onto a palette (`palette.toml`: damage type, harm/heal/help, tradition, type) and framed by type with action-cost and area badges, at 128px
 - **Portraits** — players (ancestry × class × sex) and NPCs (role × ancestry), subjects assembled from per-part concepts (`concepts_portraits.json`), and monsters (`concepts_monsters.json`), in their own colours, at 256px
+- **Series** — icons that are steps of one image (observed → hidden → undetected) are listed together in `concepts_series.json` and painted from one seed, so they come out as the same composition; re-rolling one re-rolls them all
 - **Uniqueness** — look-alike icons are listed (and optionally re-rolled)
 - **Coverage** — records without an image or a concept, and images whose key no longer exists
 
@@ -40,13 +41,13 @@ pixi run icons --only fireball,heal      # specific keys
 pixi run icons --all                     # everything; resumable, pictures are cached
 pixi run icons --report                  # coverage and collisions only
 pixi run icons --records players --all   # conditions | effects | players | npcs | monsters
-pixi run icons-gallery                   # live review page: click to regenerate, ✓ to approve, ✎ to edit the prompt
+pixi run icons-gallery                   # live review page: click to regenerate, ✓ to approve, ✎ to edit the prompt, 🖌 to edit the picture by hand
 pixi run icons-cloud                     # Cloudflare worker that rides the daily allowance
 pixi run icons-sync push                 # back up the working set to Google Drive (pull restores it)
 ```
-Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--watch`, `--icon-size`, `--export <dir>` (approved pictures only), `--export-size`. `systemd/` has user units for the local worker, the cloud worker, the gallery and a nightly `icons-sync push` timer. Cloudflare needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment.
+A `--watch` build serves the gallery's flags for every set, whichever set it is filling. A portrait painted on paper or inside a drawn frame instead of the black backdrop is painted again, up to twice. Options: `--backend local|cloudflare`, `--model turbo|flux`, `--reverse`, `--watch`, `--icon-size`, `--export <dir>` (approved pictures only), `--export-size`. `systemd/` has user units for the local worker, the cloud worker, the gallery and a nightly `icons-sync push` timer. Cloudflare needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment.
 
-Renders and review marks live in `$ICON_GEN_OUT` (pixi.toml; `~/.local/share/icon_gen`), outside both repos; records are read from `$BEVY_RPG`. Approved pictures reach the game only through `--export`. **Backup, once:** `pixi run rclone config create gdrive drive scope=drive.file` opens a browser to authorise Google Drive; rclone then sees only the `icon_gen` folder it creates.
+Renders and review marks live in `$ICON_GEN_OUT` (pixi.toml; `~/.local/share/icon_gen`), outside both repos; records are read from `$BEVY_RPG`. Approved pictures reach the game only through `--export`. A monster's card shows the lore of its reference record, read from `$RULES_REFERENCE` for review only; 🖌 opens a picture in `$ICON_GEN_EDITOR`, and saving there replaces it. **Backup, once:** `pixi run rclone config create gdrive drive scope=drive.file` opens a browser to authorise Google Drive; rclone then sees only the `icon_gen` folder it creates.
 
 **Models**: SD-Turbo (Stability Community License) · FLUX.1 [schnell] Q4_0 (Apache 2.0) · FLUX.2 [klein] 4B on Workers AI (Apache 2.0) · TAESD/TAEF1 decoders
 

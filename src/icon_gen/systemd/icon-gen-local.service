@@ -1,5 +1,5 @@
 [Unit]
-Description=icon_gen: local FLUX renders (from the end of the list, gallery flags first)
+Description=icon_gen: local FLUX renders (from the end of the list, gallery flags for every set first)
 After=network-online.target
 
 [Service]

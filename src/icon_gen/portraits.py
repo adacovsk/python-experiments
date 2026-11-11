@@ -30,14 +30,24 @@ picked per key: with one fixed framing every bust came out the same frontal,
 evenly-lit face, and the ancestry was the only thing left to tell them apart. Monsters share no parts, so each has its own line in
 concepts_monsters.json; their records carry no description, so one without a concept
 falls back to its name, size and traits.
+
+A monster's description, what the gallery shows beside its picture, is its own facts
+(size, traits, attacks, movement) and the lore of the reference record it was built
+from. A name alone ("festrog") says nothing about what the picture should show, to a
+reviewer or to the model. The lore is read from the reference checkout at load and
+only displayed: it is the publisher's text and may name the creature differently from
+the game, so it never goes into a prompt, a concept file or the game.
 """
 from __future__ import annotations
 
+import html
 import json
+import re
 import zlib
 from pathlib import Path
 
 from abilities import Ability
+from paths import REFERENCE
 
 HERE = Path(__file__).resolve().parent
 CONCEPT_FILE = HERE / "concepts_portraits.json"
@@ -179,14 +189,58 @@ def monster_concepts() -> dict[str, str]:
     return json.loads(MONSTER_CONCEPT_FILE.read_text()) if MONSTER_CONCEPT_FILE.exists() else {}
 
 
+def _plain(markup: str) -> str:
+    """Reference lore as plain paragraphs: its inline links keep only their label."""
+    text = re.sub(r"@\w+\[[^\]]*\]\{([^}]*)\}", r"\1", markup)
+    text = re.sub(r"@\w+\[[^\]]*?([^.\]]+)\]", r"\1", text)
+    text = re.sub(r"</p>|<br\s*/?>|</li>|</h\d>", "\n", text)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return "\n\n".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
+
+
+def _lore(repo: Path) -> dict[str, str]:
+    """key -> the lore of the reference record a monster was built from, headed by that
+    record's own name where the game calls the creature something else.
+
+    `scripts/monster_provenance.json` in the game checkout names each monster's source
+    record; a monster with none there, or with no reference checkout, has no lore."""
+    provenance = repo / "scripts" / "monster_provenance.json"
+    if REFERENCE is None or not provenance.exists():
+        return {}
+    lore = {}
+    for key, source in json.loads(provenance.read_text()).items():
+        path = REFERENCE / "packs" / "pf2e" / source.get("pack", "") / source.get("file", "")
+        if not path.is_file():
+            continue
+        record = json.loads(path.read_text())
+        text = _plain(record.get("system", {}).get("details", {}).get("publicNotes", ""))
+        renamed = re.sub(r"[^a-z0-9]+", "_", record["name"].lower()).strip("_") != key
+        lore[key] = "\n\n".join(x for x in (f"In the reference: {record['name']}" if renamed else "", text) if x)
+    return lore
+
+
+def _facts(record: dict) -> str:
+    """One line of what the record itself says about the body: size, traits, attacks, movement."""
+    traits = [t for t in record.get("traits", []) if t != record.get("size")]
+    attacks = [name.replace("_", " ") for name in record.get("natural_attacks", {})]
+    speeds = [f"{mode} {feet} ft" for mode, feet in record.get("speeds", {}).items() if feet]
+    return " · ".join(x for x in (
+        " ".join([record.get("size", ""), *traits]).strip().capitalize(),
+        f"level {record['level']}" if "level" in record else "",
+        f"attacks: {', '.join(attacks)}" if attacks else "",
+        ", ".join(speeds)) if x)
+
+
 def load_monsters(repo: Path) -> dict[str, Ability]:
     written = monster_concepts()
+    lore = _lore(repo)
     records = {}
     for key, (environment, record) in _monsters(repo).items():
         traits = ", ".join(t for t in record.get("traits", []) if t != record.get("size"))
         fallback = f"a {record.get('size', '')} {record['name'].lower()}, {traits}".replace("  ", " ")
         records[key] = Ability(
-            key=key, name=record["name"], description="", kind=f"Monsters · {environment.capitalize()}",
+            key=key, name=record["name"], kind=f"Monsters · {environment.capitalize()}",
+            description="\n\n".join(x for x in (_facts(record), lore.get(key, "")) if x),
             traits=(), mechanics=(), damage_type=None, actions="passive", area=None,
             subject=written.get(key) or fallback,
             parts=(("monster", key),),

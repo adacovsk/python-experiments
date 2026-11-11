@@ -38,6 +38,7 @@ import time
 import zlib
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 import abilities as ability_data
@@ -67,7 +68,32 @@ PORTRAITS = ("players", "npcs", "monsters")
 def default_size(records: str) -> int:
     """128 keeps an icon sharp to 250% UI scale; a portrait is shown larger."""
     return 256 if records in PORTRAITS else 128
-CONCEPTS: dict[str, str] = json.loads((HERE / CONCEPT_FILES["abilities"]).read_text())
+# Pictures meant to read as steps of one image (seen, hidden, undetected...): each
+# list in concepts_series.json, `{records: {series: [keys]}}`, is painted from one
+# seed, so its near-identical concept lines come out as the same composition.
+SERIES_FILE = HERE / "concepts_series.json"
+# A portrait whose outer ring is mostly this bright was painted on paper or inside a
+# drawn mat, usually with a caption, instead of on the black backdrop; it is painted
+# again, this many times at most, and the darkest-edged try is kept.
+FRAMED_LEVEL, FRAMED_SHARE, FRAMED_RETRIES = 60, 0.5, 2
+
+
+def default_set(records: str) -> str:
+    return "main" if records == "abilities" else records
+
+
+def framed(png: bytes) -> float:
+    """The share of the picture's outer ring that is not backdrop-dark."""
+    with Image.open(io.BytesIO(png)) as image:
+        grey = np.asarray(image.convert("L"))
+    edge = max(1, grey.shape[1] // 25)
+    ring = np.concatenate([grey[:edge].ravel(), grey[-edge:].ravel(),
+                           grey[edge:-edge, :edge].ravel(), grey[edge:-edge, -edge:].ravel()])
+    return float((ring > FRAMED_LEVEL).mean())
+
+
+# One model per process however many sets it serves: loading FLUX twice would not fit.
+RENDERERS: dict[tuple[str, str], Renderer | CloudflareRenderer] = {}
 
 
 def load_records(kind: str, repo: Path) -> dict[str, ability_data.Ability]:
@@ -174,7 +200,6 @@ class Build:
         self.icons.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.out / "manifest.json"
         self.manifest: dict[str, dict] = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
-        self._renderer: Renderer | CloudflareRenderer | None = None
         self.refused: list[str] = []
         self.bumped: dict[str, int] = {}  # re-rolled keys -> the attempt to render next
         self.queue = Queue(self.out / "queue")
@@ -182,6 +207,19 @@ class Build:
         self.portrait = args.records in PORTRAITS
         self.concept_file = HERE / CONCEPT_FILES[args.records]
         self.concepts_seen = self.concept_stamp()
+        # An icon set's concept lines, one per picture. A portrait's are per part and
+        # already folded into its record's subject.
+        self.concepts: dict[str, str] = {} if self.portrait else self.read_concepts()
+
+    def read_concepts(self) -> dict[str, str]:
+        return json.loads(self.concept_file.read_text()) if self.concept_file.exists() else {}
+
+    def series(self) -> dict[str, list[str]]:
+        """This set's series, read fresh: they are edited while builds run."""
+        return json.loads(SERIES_FILE.read_text()).get(self.args.records, {}) if SERIES_FILE.exists() else {}
+
+    def series_of(self, picture: str) -> str | None:
+        return next((name for name, keys in self.series().items() if picture in keys), None)
 
     def concept_stamp(self) -> int:
         return self.concept_file.stat().st_mtime_ns if self.concept_file.exists() else 0
@@ -190,7 +228,6 @@ class Build:
         """Pick up concept lines edited in the gallery since this build started: a
         `--watch` build runs for days, and would otherwise repaint an edited icon
         from the line it was trying to replace."""
-        global CONCEPTS
         stamp = self.concept_stamp()
         if stamp == self.concepts_seen:
             return
@@ -200,21 +237,24 @@ class Build:
             every.clear()
             every.update(load_records(self.args.records, self.args.repo))
         else:
-            CONCEPTS = json.loads(self.concept_file.read_text())
+            self.concepts = self.read_concepts()
 
     def renderer(self) -> Renderer | CloudflareRenderer:
         # Started on first use: a run with every picture cached never loads the model.
-        if self._renderer is None:
+        which = (self.args.backend, self.args.model)
+        if which not in RENDERERS:
             if self.args.backend == "cloudflare":
-                self._renderer = CloudflareRenderer().__enter__()
+                RENDERERS[which] = CloudflareRenderer().__enter__()
             else:
                 print(f"Loading {self.args.model} ...", flush=True)
-                self._renderer = Renderer(self.args.model).__enter__()
-        return self._renderer
+                RENDERERS[which] = Renderer(self.args.model).__enter__()
+        return RENDERERS[which]
 
-    def close(self) -> None:
-        if self._renderer is not None:
-            self._renderer.__exit__()
+    @staticmethod
+    def close() -> None:
+        for renderer in RENDERERS.values():
+            renderer.__exit__()
+        RENDERERS.clear()
 
     def glyph(self, ability: ability_data.Ability) -> bytes:
         # Read fresh: the other build filling this set may have painted it since we
@@ -223,9 +263,14 @@ class Build:
             self.manifest = json.loads(self.manifest_path.read_text())
         picture = ability.picture or ability.key
         entry = self.manifest.get(picture, {})
-        attempt = self.bumped.get(picture, entry.get("attempt", 0))
-        prompt = prompts.prompt(ability, CONCEPTS, self.args.records, self.portrait)
-        seed = seed_for(picture, attempt)
+        # A series is painted from one seed and re-rolled as a whole, so its attempt is
+        # the series' own, kept in the manifest beside the pictures'.
+        series = self.series_of(picture)
+        shared = f"series:{series}"
+        attempt = (self.manifest.get(shared, {}).get("attempt", 0) if series
+                   else self.bumped.get(picture, entry.get("attempt", 0)))
+        prompt = prompts.prompt(ability, self.concepts, self.args.records, self.portrait)
+        seed = seed_for(shared if series else picture, attempt)
         path = self.glyphs / f"{picture}.png"
         # An edited or restored picture was chosen by someone looking at it, so a changed
         # concept or style does not repaint it — only a re-roll (a new seed) does. Otherwise
@@ -234,6 +279,23 @@ class Build:
         if path.exists() and entry.get("seed") == seed and (kept or entry.get("prompt") == prompt):
             return path.read_bytes()
         png = self.renderer().render(prompt, prompts.NEGATIVE, seed)
+        if self.portrait:
+            share = framed(png)
+            for _ in range(FRAMED_RETRIES):
+                if share <= FRAMED_SHARE:
+                    break
+                try:
+                    again = self.renderer().render(prompt, prompts.NEGATIVE, seed_for(picture, attempt + 1))
+                except QuotaExhausted:
+                    break  # keep the try in hand; the next picture reports the allowance
+                attempt += 1
+                print(f"  {picture}: painted inside a frame or on paper, trying again", flush=True)
+                if framed(again) < share:
+                    png, share, seed = again, framed(again), seed_for(picture, attempt)
+            # The kept try's own attempt, so the cache finds the seed it was painted from.
+            attempt = next(n for n in range(attempt + 1) if seed_for(picture, n) == seed)
+            if picture in self.bumped:
+                self.bumped[picture] = attempt
         if path.exists():
             self.set_aside(picture, entry)
         write_atomically(path, png)
@@ -308,6 +370,20 @@ class Build:
         for user in self.users(picture, every):
             self.make(every[user], force=True)
 
+    def by_hand(self, key: str, edited: bytes, every: dict[str, ability_data.Ability]) -> None:
+        """Take a picture edited in an image editor as the next step of its edit chain,
+        so it is kept through later passes and undone like any other edit. Needs no
+        model, so the gallery does this itself rather than queueing it for a build."""
+        picture = every[key].picture or key
+        path = self.glyphs / f"{picture}.png"
+        entry = json.loads(self.manifest_path.read_text()).get(picture, {}) if self.manifest_path.exists() else {}
+        edits = entry.get("edits", [])
+        write_atomically(self.history / f"{picture}.{len(edits)}", path.read_bytes())
+        write_atomically(path, edited)
+        self.record(picture, {**entry, "edits": [*edits, "edited by hand"]})
+        for user in self.users(picture, every):
+            self.make(every[user], force=True)
+
     def undo(self, key: str, every: dict[str, ability_data.Ability], to_original: bool = False) -> bool:
         """Put back the picture from before the last edit, or the original; False when the
         picture has no edits. The step files stay: the next edit overwrites them in turn."""
@@ -357,8 +433,11 @@ class Build:
                     done_what = "reverted to the original" if reverted else "last improvement undone"
                     outcome = done_what if self.undo(key, every, reverted) else "no improvements to undo"
                 else:
-                    self.reroll(key)
+                    rest = self.reroll(key)
                     outcome = "regenerated" if self.make(every[key]) else "refused by the content filter"
+                    for member in rest:
+                        if member in every:
+                            self.make(every[member])
             except QuotaExhausted:
                 self.queue.release(claimed, key)
                 raise
@@ -397,11 +476,24 @@ class Build:
             write_atomically(path, encoded.getvalue())
         return path
 
-    def reroll(self, key: str) -> None:
+    def reroll(self, key: str) -> list[str]:
+        """Ask for a new picture, and name the other records that must be made again
+        with it: the rest of a series, which is one composition and re-rolls whole."""
         # Re-rolling one direction of an effect repaints the picture both share.
         key = self.pictures.get(key, key)
+        series = self.series_of(key)
+        if series:
+            shared = f"series:{series}"
+            on_disk = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
+            attempt = on_disk.get(shared, {}).get("attempt", 0) + 1
+            self.record(shared, {"attempt": attempt})
+            members = self.series()[series]
+            # Marked re-rolled, so an approved member is repainted with the rest.
+            self.bumped.update(dict.fromkeys(members, attempt))
+            return [member for member in members if member != key]
         current = self.bumped.get(key, self.manifest.get(key, {}).get("attempt", 0))
         self.bumped[key] = current + 1
+        return []
 
 
 def sheet(paths: list[Path], dest: Path, cell: int) -> None:
@@ -465,12 +557,9 @@ def main() -> None:
     if not (args.only or args.sample or args.all or args.report or args.reroll or args.watch):
         parser.error("choose what to render: --only, --sample, --all, --reroll, --report or --watch")
 
-    global CONCEPTS
     args.icon_size = args.icon_size or default_size(args.records)
-    concept_file = HERE / CONCEPT_FILES[args.records]
-    # A portrait's concepts are per part and already folded into its record's subject.
-    CONCEPTS = {} if args.records in PORTRAITS else (json.loads(concept_file.read_text()) if concept_file.exists() else {})
-    args.set = args.set or ("main" if args.records == "abilities" else args.records)
+    own_set = args.set is None
+    args.set = args.set or default_set(args.records)
     every = load_records(args.records, args.repo)
     if not every:
         sys.exit(f"no {args.records} records under {args.repo}/assets/data/en")
@@ -490,6 +579,19 @@ def main() -> None:
 
     build = Build(args)
     build.pictures = {key: record.picture for key, record in every.items() if record.picture}
+    # A watching build serves the gallery's flags for every set, not only its own: a
+    # flag is someone waiting, whichever set this build happens to be filling.
+    watched = [(build, every)]
+    for kind in CONCEPT_FILES if args.watch and own_set else ():
+        if kind != args.records:
+            other = Build(argparse.Namespace(**{**vars(args), "records": kind, "set": default_set(kind),
+                                                "icon_size": default_size(kind)}))
+            records = load_records(kind, args.repo)
+            other.pictures = {key: record.picture for key, record in records.items() if record.picture}
+            watched.append((other, records))
+
+    def drain() -> int:
+        return sum(each.drain(records) for each, records in watched)
     if args.reroll:
         # A new attempt number changes the cache key, so the next render replaces it;
         # the old picture is set aside under history/replaced/, not overwritten.
@@ -501,16 +603,16 @@ def main() -> None:
             done = 0
             for done, key in enumerate(targets, start=1):
                 # Flags set in the gallery jump the queue: someone is waiting on those.
-                build.drain(every)
+                drain()
                 made = build.make(every[key])
                 print(f"[{done}/{len(targets)}] {key}{'' if made else '  (refused by the content filter)'}", flush=True)
                 # A long batch runs for hours; keep the review page current as it goes.
                 if done % 25 == 0:
-                    gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
+                    gallery.write(build.out / "gallery.html", build.icons, every, build.concepts, args.backend)
             if not args.report:
-                build.drain(every)
+                drain()
             while args.watch:
-                if not build.drain(every):
+                if not drain():
                     time.sleep(10)
         except QuotaExhausted as spent:
             # Everything rendered so far is cached; re-running the same command resumes.
@@ -525,7 +627,9 @@ def main() -> None:
         # number in the thousands; they are told apart by eye in the gallery.
         for round_ in range(0 if build.portrait else args.max_rerolls + 1):
             prints = {p.stem: fingerprint(p) for p in build.icons.glob("*.png") if p.stem in every}
-            clashes = collisions(prints, args.max_bits, args.max_colour)
+            # Members of a series are alike on purpose.
+            clashes = [clash for clash in collisions(prints, args.max_bits, args.max_colour)
+                       if build.series_of(clash[0]) is None or build.series_of(clash[0]) != build.series_of(clash[1])]
             if not clashes or args.report or round_ == args.max_rerolls:
                 break
             rerolled = sorted({later for _, later, _, _ in clashes})
@@ -549,10 +653,10 @@ def main() -> None:
             print(f"  concept missing or stale: {gap}")
     else:
         needed = {record.picture or key for key, record in every.items()}
-        unconceived = sorted(needed - CONCEPTS.keys())
+        unconceived = sorted(needed - build.concepts.keys())
         print(f"Concepts: {len(needed) - len(unconceived)}/{len(needed)} pictures have one "
               f"(the rest fall back to their own name and description)")
-        for key in sorted(CONCEPTS.keys() - needed):
+        for key in sorted(build.concepts.keys() - needed):
             print(f"  concept for a key no longer in the data: {key}")
     print(f"Coverage: {len(present & set(every))}/{len(every)} {args.records} have {'a portrait' if build.portrait else 'an icon'}; "
           f"{len(missing)} missing, {len(orphans)} orphaned (key no longer in the data)")
@@ -565,7 +669,7 @@ def main() -> None:
     if shown:
         sheet(shown, build.out / "sheet.png", cell=args.icon_size)
         print(f"Contact sheet: {build.out / 'sheet.png'}")
-    page = gallery.write(build.out / "gallery.html", build.icons, every, CONCEPTS, args.backend)
+    page = gallery.write(build.out / "gallery.html", build.icons, every, build.concepts, args.backend)
     print(f"Review gallery: {page}")
     if args.export:
         # Only pictures approved in the gallery reach the game; a mark is the mtime of the

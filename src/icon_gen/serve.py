@@ -9,25 +9,34 @@ POST /concept rewrites a concept line, which running builds pick up. POST /impro
 flags an icon for an edit of its current picture from an instruction, and POST /undo
 for putting back the picture from before the last edit, the original, or the picture
 a repaint replaced. GET /prompt.json shows the full prompt an icon is painted from, and
-POST /style rewrites the style line every prompt in its sets ends with. Bound to
-127.0.0.1 only.
+POST /style rewrites the style line every prompt in its sets ends with. POST /open
+puts a working copy of an icon's picture in <set>/manual/ and opens it in the image
+editor; once the copy is saved over, the next poll takes it as the icon's picture.
+Bound to 127.0.0.1 only.
 """
 from __future__ import annotations
 
 import argparse
 import functools
+import io
 import json
 import os
+import shlex
+import shutil
+import subprocess
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from PIL import Image
+
 import gallery
 import portraits
 import prompts
-from build import CONCEPT_FILES, PORTRAITS, default_size, load_records
-from paths import OUTPUT, REPO
+from build import CONCEPT_FILES, PORTRAITS, Build, default_size, load_records
+from paths import EDITOR, OUTPUT, REPO
 
 HERE = Path(__file__).resolve().parent
 
@@ -61,6 +70,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(OUTPUT), **kwargs)
 
     def all_entries(self) -> list[dict]:
+        self.take_hand_edits()
         found = []
         parts = {**portraits.concepts(), "monster": portraits.monster_concepts()}
         for section, (set_name, kind, heading) in enumerate(SETS):
@@ -118,7 +128,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = {"/queue": self.post_queue, "/review": self.post_review, "/concept": self.post_concept,
-                 "/improve": self.post_improve, "/undo": self.post_undo, "/style": self.post_style}
+                 "/improve": self.post_improve, "/undo": self.post_undo, "/style": self.post_style,
+                 "/open": self.post_open}
         handler = route.get(self.path.split("?", 1)[0])
         if handler is None:
             self.send_error(404)
@@ -196,6 +207,74 @@ class Handler(SimpleHTTPRequestHandler):
         which = "previous" if body.get("previous") else "revert" if body.get("revert") else "undo"
         self.ask(set_name, key, {which: True})
         self.reply()
+
+    def build(self, set_name: str) -> Build:
+        """This set as a build sees it, for the work that needs no model."""
+        kind = KINDS[set_name]
+        return Build(argparse.Namespace(out=OUTPUT, set=set_name, records=kind, repo=self.repo,
+                                        icon_size=default_size(kind), backend="cloudflare", model=""))
+
+    def post_open(self, set_name: str, body: dict) -> None:
+        """Open an icon's picture in the image editor, as a working copy in <set>/manual/.
+
+        The copy rather than the picture itself: an editor saves in place and not
+        atomically, and a build may repaint or read the picture at any moment. A copy
+        saved since the picture was painted is unfinished work and is opened as it is."""
+        key = str(body.get("key", ""))
+        record = self.records[set_name].get(key)
+        command = shlex.split(EDITOR)
+        if record is None or not command or shutil.which(command[0]) is None:
+            self.send_error(400, "unknown key, or ICON_GEN_EDITOR names no installed editor")
+            return
+        picture = record.picture or key
+        source = OUTPUT / set_name / "glyphs" / f"{picture}.png"
+        if not source.exists():
+            self.send_error(400, "no picture yet")
+            return
+        copy = OUTPUT / set_name / "manual" / f"{picture}.png"
+        copy.parent.mkdir(exist_ok=True)
+        with LOCK:
+            if not copy.exists() or copy.stat().st_mtime_ns <= source.stat().st_mtime_ns:
+                shutil.copy2(source, copy)
+        # In a unit of its own where systemd runs the session: a child of this server
+        # would be stopped with it, taking unsaved work, whenever the gallery restarts.
+        if shutil.which("systemd-run"):
+            command = ["systemd-run", "--user", "--collect", "--quiet", "--", *command]
+        subprocess.Popen([*command, str(copy)], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.reply({"opened": str(copy)})
+
+    def take_hand_edits(self) -> None:
+        """Take every working copy saved since its picture was painted as that picture.
+
+        Checked on each poll, so saving in the editor is all it takes. A copy still
+        being written does not load as an image, or is under a second old, and waits
+        for the next poll."""
+        with LOCK:
+            for set_name in self.records:
+                for copy in sorted((OUTPUT / set_name / "manual").glob("*.png")):
+                    picture = copy.stem
+                    source = OUTPUT / set_name / "glyphs" / copy.name
+                    key = next((k for k, r in self.records[set_name].items() if (r.picture or k) == picture), None)
+                    stamp = copy.stat().st_mtime_ns
+                    if (key is None or not source.exists() or stamp <= source.stat().st_mtime_ns
+                            or time.time_ns() - stamp < 1_000_000_000):
+                        continue
+                    try:
+                        with Image.open(copy) as image:
+                            encoded = io.BytesIO()
+                            # Flattened onto the backdrop the composer cuts subjects out of.
+                            flat = Image.new("RGB", image.size, (0, 0, 0))
+                            flat.paste(image.convert("RGBA"), mask=image.convert("RGBA").getchannel("A"))
+                            flat.save(encoded, format="PNG")
+                    except (OSError, SyntaxError):
+                        continue
+                    with Image.open(source) as current:
+                        unchanged = current.size == flat.size and current.convert("RGB").tobytes() == flat.tobytes()
+                    if unchanged:
+                        os.utime(source)  # saved without a change: nothing to take, and not asked again
+                        continue
+                    self.build(set_name).by_hand(key, encoded.getvalue(), self.records[set_name])
 
     def icons_dir(self, set_name: str) -> Path:
         return OUTPUT / set_name / "icons" / str(default_size(KINDS[set_name]))

@@ -10,6 +10,10 @@ version = "0.1.0"
 BEVY_RPG = "$HOME/code/bevy-rpg"
 # Raw renders and review state: a working set, backed up to Google Drive by `icons-sync`.
 ICON_GEN_OUT = "$HOME/.local/share/icon_gen"
+# The rules reference checkout the gallery reads monster lore from, for review only.
+RULES_REFERENCE = "$HOME/code/pf2e"
+# What the gallery's "Open in image editor" launches on a picture.
+ICON_GEN_EDITOR = "drawing"
 
 [tasks]
 icons-setup = "bash src/icon_gen/setup.sh"
