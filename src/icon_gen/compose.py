@@ -219,7 +219,7 @@ def compose(ability: Ability, render_png: bytes, export_size: int) -> Image.Imag
     canvas = fill(size, mask)
 
     glyph_size = int(size * 0.84)
-    glyph = glyph_layer(render_png, glyph_size, scheme["ramp"], PALETTE["blend"])
+    glyph = glyph_layer(render_png, glyph_size, scheme["ramp"], scheme.get("blend", PALETTE["blend"]))
     layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     offset = (size - glyph_size) // 2
     layer.paste(glyph, (offset, offset))

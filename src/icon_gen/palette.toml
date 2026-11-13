@@ -4,7 +4,10 @@
 # palette shares one colour scheme while keeping its own shading and detail; `blend`
 # is the palette's share, the rest the model's own colour. The ramps are muted and
 # dark on purpose: the look is antique engraving with a cosmic-horror mood. The frame's rim and glow take the
-# ramp's middle stop.
+# ramp's middle stop. A palette can set its own `blend`: the red ones take more of the
+# ramp, because their prompt words paint the render itself red, and at the shared share
+# that red washes over the whole subject instead of marking it. Their ramps keep red to
+# the middle stop and shade through near-neutral darks for the same reason.
 #
 # The first palette that applies to an ability wins:
 #   1. the damage type its mechanics deal
@@ -17,7 +20,8 @@ blend = 0.55
 
 [damage_type.fire]
 words = "oxblood, rust and tarnished gold"
-ramp = [[30, 10, 13], [113, 41, 39], [183, 102, 56], [211, 174, 79], [235, 226, 175]]
+ramp = [[22, 17, 15], [110, 72, 50], [204, 128, 66], [232, 196, 110], [248, 240, 206]]
+blend = 0.85
 [damage_type.cold]
 words = "deep slate, frost grey-blue and bone white"
 ramp = [[12, 17, 34], [44, 69, 108], [100, 154, 195], [175, 216, 229], [219, 246, 246]]
@@ -50,7 +54,8 @@ words = "black-violet, bruised purple and dim magenta"
 ramp = [[9, 4, 15], [52, 24, 68], [116, 61, 132], [191, 115, 198], [233, 189, 239]]
 [damage_type.bleed]
 words = "black-red, oxblood and dried scarlet"
-ramp = [[18, 5, 5], [75, 22, 25], [144, 53, 56], [200, 92, 85], [233, 176, 167]]
+ramp = [[20, 17, 17], [90, 70, 68], [172, 74, 66], [224, 160, 140], [244, 224, 214]]
+blend = 0.85
 [damage_type.bludgeoning]
 words = "umber, stone grey and bone"
 ramp = [[21, 18, 16], [75, 69, 63], [135, 128, 118], [186, 179, 168], [228, 222, 209]]
@@ -69,7 +74,8 @@ ramp = [[12, 10, 6], [77, 63, 33], [160, 137, 79], [212, 193, 138], [242, 235, 2
 
 [side.harmful]
 words = "black, oxblood and dull ember"
-ramp = [[16, 7, 7], [76, 29, 29], [162, 79, 68], [212, 136, 101], [237, 202, 182]]
+ramp = [[20, 18, 18], [92, 82, 78], [168, 96, 76], [224, 184, 150], [246, 236, 224]]
+blend = 0.85
 [side.healing]
 words = "deep moss, faded verdigris and pale light"
 ramp = [[9, 23, 15], [35, 85, 57], [90, 177, 123], [168, 223, 185], [215, 245, 224]]
@@ -119,7 +125,8 @@ words = "dark plum, mauve and pale pink"
 ramp = [[25, 17, 25], [85, 63, 85], [199, 169, 199], [216, 193, 216], [237, 220, 237]]
 [ability_type.Creature]
 words = "black, rust red and bone"
-ramp = [[16, 11, 10], [79, 46, 40], [173, 119, 112], [207, 176, 161], [234, 221, 207]]
+ramp = [[20, 18, 17], [92, 84, 78], [172, 122, 104], [218, 196, 178], [240, 232, 220]]
+blend = 0.85
 [ability_type.Condition]
 words = "ash grey, faded bone and dim violet"
 ramp = [[18, 16, 22], [62, 58, 70], [140, 132, 150], [195, 188, 200], [238, 234, 240]]
