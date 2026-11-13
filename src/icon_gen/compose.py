@@ -103,12 +103,43 @@ def frame_mask(shape: str, size: int, inset: float) -> Image.Image:
     return mask
 
 
+# A band whose median is no brighter than this is the black backdrop the prompt asks for.
+BACKDROP_DARK = 64
+# How far in to look for it, as a share of the render's side.
+BACKDROP_MAX_INSET = 0.2
+
+
+def _backdrop(rgb: np.ndarray) -> tuple[np.ndarray, int]:
+    """The render's backdrop colour, and how far in from the edge it starts.
+
+    Many renders come back as a tarot card: a light parchment border around the black
+    field the prompt asked for. Reading the backdrop off the outermost border takes the
+    parchment for it, so the cut keeps the black field and drops the light subject,
+    which inverts the picture. So walk inward a band at a time and take the first dark
+    band; a render with no dark band within reach has a light backdrop, read off its edge.
+    """
+    n = rgb.shape[0]
+    edge = max(4, n // 25)
+
+    def band(i: int) -> np.ndarray:
+        return np.median(np.concatenate([
+            rgb[i:i + edge, i:n - i].reshape(-1, 3), rgb[n - i - edge:n - i, i:n - i].reshape(-1, 3),
+            rgb[i:n - i, i:i + edge].reshape(-1, 3), rgb[i:n - i, n - i - edge:n - i].reshape(-1, 3),
+        ]), axis=0)
+
+    for i in range(0, int(n * BACKDROP_MAX_INSET) + 1, edge):
+        colour = band(i)
+        if colour.max() <= BACKDROP_DARK:
+            return colour, i
+    return band(0), 0
+
+
 def glyph_layer(render_png: bytes, box: int, ramp: list[list[int]], blend: float) -> Image.Image:
     """The render's subject, cut from its background, recoloured onto its palette's
     ramp, cropped to its own extent, scaled to fill `box`, with a dark outline.
 
     The prompt asks for a plain black background, so the subject is whatever differs
-    from it; the background colour is read off the render's border rather than assumed.
+    from it; the backdrop colour is read off the render (`_backdrop`) rather than assumed.
     Cropping to the subject's bounding box is what makes it large: the model rarely
     fills its canvas, and placing the whole render left the subject a fraction of the
     icon. Dark strokes inside the subject cut out too, which is invisible: the frame's
@@ -117,12 +148,12 @@ def glyph_layer(render_png: bytes, box: int, ramp: list[list[int]], blend: float
     with Image.open(io.BytesIO(render_png)) as image:
         rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
     n = rgb.shape[0]
-    edge = max(4, n // 25)
-    border = np.concatenate([rgb[:edge].reshape(-1, 3), rgb[-edge:].reshape(-1, 3),
-                             rgb[:, :edge].reshape(-1, 3), rgb[:, -edge:].reshape(-1, 3)])
-    background = np.median(border, axis=0)
+    background, inset = _backdrop(rgb)
     difference = np.abs(rgb - background).max(axis=2) / 255.0
     alpha = np.clip((difference - 0.08) / 0.2, 0.0, 1.0)
+    # Everything outside the backdrop's band is the card's drawn frame, not subject.
+    if inset:
+        alpha[:inset], alpha[-inset:], alpha[:, :inset], alpha[:, -inset:] = 0, 0, 0, 0
     # Fade the edges out. The distilled models run without CFG, so a negative prompt
     # ("border, frame, text") is ignored and they often draw their own frame or app-icon
     # tile around the subject; this keeps only the centre, where the subject is.
